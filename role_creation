@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloudformation to create CloudFormation-Instance-Build role in an account.
+Parameters:
+  #pAccountNumber:
+  #  Description: The local account number
+  #  Type: Number
+  pAccountName:
+    Description: The local account name
+    Type: String
+  pKeyUser:
+    Description: The roles that are allowed to use the key
+    Type: String
+Resources:
+  rCloudFormationInstanceBuildRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonSSMFullAccess"
+        #- !Sub arn:aws:iam::${AWS::AccountId}:policy/IAM-CUSTOMADMIN
+      Policies:
+        - 
+          PolicyName: "AccessAllS3Buckets"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "kms:Encrypt"
+                  - "kms:Decrypt"
+                  - "kms:ReEncrypt*"
+                  - "kms:GenerateDataKey*"
+                  - "kms:DescribeKey"
+                  - "kms:CreateGrant"
+                #Resource: "arn:aws:kms:us-east-1:account#:key/uuid"
+                Resource: "*"
+              #- 
+              #  Effect: "Allow"
+              #  Action:
+              #    - "kms:CreateGrant"
+              #  Resource: "arn:aws:kms:us-east-1:account#:key/uuid"
+              #  Condition: 
+              #    Bool:
+              #      "kms:GrantIsForAWSResource": true
+        - 
+          PolicyName: "IamPassRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "iam:PassRole"
+                  - "iam:GetInstanceProfile"
+                Resource: "*"
+      RoleName: roleName
+  rCloudFormationInstanceBuildProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      InstanceProfileName: instanceProfileName
+      Path: "/"
+      Roles:
+        - 
+          Ref: "rCloudFormationInstanceBuildRole"
+#Outputs:
+#  oInstanceProfile:
+#    Description: Sample output
+#    Value: !Ref rCloudFormationInstanceBuildProfile
+    #Export:
+    #  Name: Value to export
