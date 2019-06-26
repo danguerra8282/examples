@@ -1,0 +1,6 @@
+{
+  "Parameters": {
+    "pProductName": "windowsServer2016",
+    "pEnvironment": "accountName"
+  }
+}
