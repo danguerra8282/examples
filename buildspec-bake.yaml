@@ -1,0 +1,116 @@
+version: 0.2
+
+environment_variables:
+  plaintext:
+    "PIPELINE_NAME": "windowsServer2016-InfraSvcs"
+
+phases:
+  pre_build:
+    commands:
+      - echo "Getting Pipeline Execution ID"
+      - |-
+        aws codepipeline get-pipeline-state --name $PIPELINE_NAME \
+        --query 'stageStates[?stageName==`BuildAndPackage`].latestExecution[].pipelineExecutionId' \
+        --output text > /tmp/pipeline_exec_id.txt
+
+      - echo "Installing HashiCorp Packer..."
+      # - curl -qLk -o packer.zip https://releases.hashicorp.com/packer/1.2.2/packer_1.2.2_linux_amd64.zip && unzip packer.zip
+      - aws s3 cp s3://deliverypipeline-binaries-679177070049-us-east-1/packer_1.2.2_linux_amd64.zip packer.zip && unzip packer.zip
+
+      - echo "Installing jq..."
+      # - curl -qLk -o jq https://stedolan.github.io/jq/download/linux64/jq && chmod +x ./jq
+      - aws s3 cp s3://deliverypipeline-binaries-679177070049-us-east-1/jq jq && chmod +x ./jq
+
+
+      - echo "1.0.0" > /tmp/build_version.txt
+  build:
+    commands:
+      - echo "Configuring AWS credentials"
+      - curl -qL -o aws_credentials.json http://169.254.170.2/$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI > aws_credentials.json
+      - aws configure set region $AWS_REGION
+      - aws configure set aws_access_key_id `./jq -r '.AccessKeyId' aws_credentials.json`
+      - aws configure set aws_secret_access_key `./jq -r '.SecretAccessKey' aws_credentials.json`
+      - aws configure set aws_session_token `./jq -r '.Token' aws_credentials.json`
+
+      - echo "Getting Foundational AMI"
+      - aws lambda invoke --function-name Get_Latest_AMI --payload '{"AMI_Name":"Windows2016"}' /tmp/foundational_ami.txt
+      - sed -i.bak 's/\"//g' /tmp/foundational_ami.txt
+
+      # - echo "Validating packerfile.json"
+      # - |-
+      #   ./packer validate -var "aws_source_ami=$(cat /tmp/foundational_ami.txt)" \
+      #   -var "pipeline_name=${PIPELINE_NAME}" \
+      #   -var "pipeline_exec_id=$(cat /tmp/pipeline_exec_id.txt)" \
+      #   -var "build_version=$(cat /tmp/build_version.txt)" iac/Packer/packerfile.json
+
+      - echo "Building HashiCorp Packer template, packerfile.json"
+      - |-
+        ./packer build -var "aws_source_ami=$(cat /tmp/foundational_ami.txt)" \
+        -var "pipeline_name=${PIPELINE_NAME}" \
+        -var "pipeline_exec_id=$(cat /tmp/pipeline_exec_id.txt)" \
+        -var "build_version=$(cat /tmp/build_version.txt)" iac/Packer/packerfile.json
+
+      - echo "HashiCorp Packer build completed on `date`"
+      - echo "{\"dynamodb.Foundational_AMI\":\"$(cat /tmp/foundational_ami.txt)\"}" > /tmp/build.json
+      - echo "cat /tmp/build.json"
+  post_build:
+    commands:
+      - echo "Encrypting AMI"
+      - cat manifest.json
+      - json=$(cat manifest.json)
+      - echo $json
+      # - artifact_id2=$(grep artifact_id /tmp/json | cut -d":" -f2)
+      # - echo $artifact_id
+      # - artifact_id=$(grep artifact_id $json | cut -d":" -f3)
+      - artifact_id=$(grep artifact_id manifest.json | cut -d":" -f3)
+      - echo $artifact_id
+      # - artifact_id=$(echo $json | ./jq ".builds.artifact_id")
+      # - artifact_id=$(echo $json | ./jq .builds.artifact_id)
+      - ami_id=$(echo $artifact_id |cut -d ':' -f2)
+      - ami_id=$(echo $ami_id |cut -d\" -f1)
+      - echo $ami_id
+      - region=$(grep artifact_id manifest.json | cut -d":" -f2)
+      - region=$(echo $region |cut -d\" -f2)
+      - echo $region
+      # - ami_id=$(./jq -r '.builds.[0].artifact_id' manifest.json)
+      # - encrypted_ami=$(aws ec2 copy-image --source-image-id $ami_id --source-region $region --region $region --encrypted --kms-key-id arn:aws:kms:us-east-1:679177070049:key/d91e2cbd-71cb-46a2-bac5-ea6715362cfd --name $PIPELINE_NAME)
+      - encrypted_ami=$(aws ec2 copy-image --source-image-id $ami_id --source-region $region --region $region --encrypted --kms-key-id arn:aws:kms:us-east-1:679177070049:key/8fa78775-7773-4ff0-96c5-d91c2bf87936 --name $PIPELINE_NAME)
+      # - encrypted_ami=`aws ec2 copy-image --source-image-id $ami_id --source-region $region --encrypted --name "guerrad4_testing_ami_encrypted"`
+      #- encrypted_ami=`aws ec2 copy-image --source-image-id $ami_id --source-region $region --encrypted --name "guerrad4_testing_ami_encrypted" 2>&1 `
+      #- aws ec2 copy-image --source-image-id $ami_id --source-region $region --encrypted --name "guerrad4_testing_ami_encrypted" > thisFile.txt
+      - echo $encrypted_ami
+      - encrypted_ami=$(echo $encrypted_ami |cut -d\" -f4)
+      - echo $encrypted_ami
+      - sleep 8m
+      # - COMPLETE=false
+      #   while [ "$COMPLETE" == "false"]
+      #   do
+      #     echo Waiting for AMI to be created
+      #     sleep 30
+      #     result=$(aws ec2 describe-images --image-ids $encrypted_ami)
+      #     echo ---------------------------------
+      #     echo $result
+      #     COMPLETE="true"
+      #   done
+
+      - echo Applying Tags
+      - aws_source_ami=$(cat /tmp/foundational_ami.txt)
+      - aws ec2 create-tags --resources $encrypted_ami --tags Key=pf:Foundational_AMI,Value=$aws_source_ami
+
+      # - echo Assigning Encrypted AMI to manifest.json
+      # - sed 's/"$region":"$ami_id"/"$region":"$encrypted_ami"/g' /tmp/manifest.json
+      # - sed "s/$ami_id/$encrypted_ami/g" manifest.json  # This works but the updated manifest.json is not being pushed to s3 at this point
+      - echo "{\"encrypted_ami\":\"$encrypted_ami\"}" > /tmp/encrypted_ami.json
+
+
+artifacts:
+  secondary-artifacts:
+    Package:
+      files:
+        - manifest.json
+        - /tmp/build.json
+      discard-paths: yes
+    InfraSvcsEncryptAMI:
+      files:
+        - /tmp/encrypted_ami.json
+      discard-paths: yes
