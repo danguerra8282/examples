@@ -1,0 +1,385 @@
+"""
+===================================================
+|     AutoShutdownStartup_AutoscalingGroups       |
+===================================================
+- Iterates through all accounts found in the infrasvcsprod\environments table
+- Iterates throuhg all acutoscaling groups in the found accounts
+- Logs the minSize, maxSize, and desiredCapactiy to infrasvcsprod\AutoShutdownStartup-AutoscalingGroups dynamo table
+- Sets minSize, maxSize, and desiredCapacity to 0 if the autoscaling group has the ShutDownInstanceAt tag and the
+specified time matches the current time
+- Sets minSize, maxSize, and desiredCapacity to the values previous logged in the infrasvcsprod\AutoShutdownStartup-
+AutoscalingGroups dynamo table if the autoscaling group has the PowerOnInstanceAt tag and the specified time matches
+the current time
+"""
+
+import logging
+import boto3
+import datetime
+from datetime import datetime
+import common.aws_helper as aws_helper
+import common.aws_api_wrapper as aws_api_wrapper
+
+######### LOGGING ###############
+logger = logging.getLogger()
+# logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+logging.getLogger("botocore").setLevel(logging.ERROR)
+
+######### CONSTANTS ###############
+NOON_OFFSET = 12
+MIDNIGHT_OFFSET = 4
+LAMBDA_ROLE = 'DELIVERY-PIPELINE-LAMBDA-AWS'
+
+
+#########  MAIN  ###############
+def lambda_handler(_event, _context):
+
+    #  Setup Connection in Central Account
+    session = boto3.Session()
+    dynamo_client = session.client('dynamodb')
+
+    #  Get Current DateTime
+    utc_date_time = datetime.utcnow()
+    logger.debug(f'utc_date_time: {utc_date_time}')
+
+    #  Get all accounts from dynamo
+    try:
+        account_numbers = aws_helper.get_all_account_numbers()
+        logger.debug(f'account_numbers: {account_numbers}')
+    except Exception as e:
+        logger.error(f'Failed retrieving account_numbers')
+        raise e
+
+    # Loop through all accounts
+    for account_number in account_numbers:
+        try:
+            print()
+            print('---')
+            logger.info(f'Starting actions in account_number: {account_number}')
+            assumed_credentials = aws_api_wrapper.assume_role(account_number, LAMBDA_ROLE, profile=None)
+
+            # Setup Connection in specific account
+            autoscaling_client = session.client('autoscaling',
+                                                aws_access_key_id=assumed_credentials['AccessKeyId'],
+                                                aws_secret_access_key=assumed_credentials['SecretAccessKey'],
+                                                aws_session_token=assumed_credentials['SessionToken'],)
+
+            # Describe autoscaling groups
+            try:
+                logger.debug(f'Describing Autoscaling Groups...')
+                autoscaling_groups = autoscaling_client.describe_auto_scaling_groups()
+                # logger.debug(f'all_autoscaling_groups: {all_autoscaling_groups}')
+            except Exception as e:
+                logger.error(f'Failed to describe_autoScalingGroups')
+                raise e
+
+            # Loop through all autoscaling groups
+            for autoscaling_group in autoscaling_groups['AutoScalingGroups']:
+                # Get autoscaling group tags
+                try:
+                    autoscaling_group_name = autoscaling_group['AutoScalingGroupName']
+                    for tag in autoscaling_group['Tags']:
+                        # Execute power on action
+                        if 'PowerOnInstanceAt' in (tag.get('Key')):
+                            logger.info(f'PowerOnInstanceAt Tag found on: {autoscaling_group_name}')
+                            asg_poweron_value = (tag.get('Value'))
+                            logger.info(f'asg_poweron_value: {asg_poweron_value}')
+
+                            # Get ASG config from dynamo
+                            try:
+                                dynamo_response = get_asg_from_dynamo(dynamo_client, autoscaling_group_name)
+                                logger.debug(f'dynamo_response: {dynamo_response}')
+                                if dynamo_response is not None:
+
+                                    desired_min_size = dynamo_response['Item']['minSize']['S']
+                                    logger.debug(f'desired_min_size: {desired_min_size}')
+                                    desired_max_size = dynamo_response['Item']['maxSize']['S']
+                                    logger.debug(f'desired_max_size: {desired_max_size}')
+                                    desired_capacity = dynamo_response['Item']['desiredCapacity']['S']
+                                    logger.debug(f'desired_capacity: {desired_capacity}')
+                            except Exception as e:
+                                logger.error(f'Failed getting logged limits from dynamo')
+                                raise e
+
+                            # Take poweron action on ASG
+                            try:
+                                if dynamo_response is not None:
+                                    _asg_response = process_poweron_action(autoscaling_client,
+                                                                           autoscaling_group_name,
+                                                                           asg_poweron_value,
+                                                                           utc_date_time,
+                                                                           NOON_OFFSET,
+                                                                           MIDNIGHT_OFFSET,
+                                                                           desired_min_size,
+                                                                           desired_max_size,
+                                                                           desired_capacity)
+                            except Exception as e:
+                                logger.error(f'Failed powering on ASG: {autoscaling_group_name}')
+                                raise e
+
+                            logger.info(' ')
+
+                        # Execute shutdown action on autoscaling group
+                        if 'ShutDownInstanceAt' in (tag.get('Key')):
+                            logger.info(f'ShutDownInstanceAt Tag found on: {autoscaling_group_name}')
+                            asg_shutdown_value = (tag.get('Value'))
+                            logger.info(f'asg_shutdown_value: {asg_shutdown_value}')
+                            current_min_size = autoscaling_group['MinSize']
+                            logger.debug(f'current_min_size: {current_min_size}')
+                            current_max_size = autoscaling_group['MaxSize']
+                            logger.debug(f'current_max_size: {current_max_size}')
+                            current_desired_capacity = autoscaling_group['DesiredCapacity']
+                            logger.debug(f'current_max_size: {current_desired_capacity}')
+
+                            # Log Current Limits to Dynamo
+                            try:
+                                dynamo_response = log_asg_to_dynamo(dynamo_client,
+                                                                    autoscaling_group_name,
+                                                                    current_min_size,
+                                                                    current_max_size,
+                                                                    current_desired_capacity)
+                            except Exception as e:
+                                logger.error(f'Failed logging limits to dynamo')
+                                raise Exception(f"Failed logging limits to dynamo, error:{e}")
+
+                            # Take shutdown action on ASG
+                            try:
+                                if dynamo_response == 200:
+                                    _asg_response = process_shutdown_action(autoscaling_client,
+                                                                            autoscaling_group_name,
+                                                                            asg_shutdown_value,
+                                                                            utc_date_time,
+                                                                            NOON_OFFSET,
+                                                                            MIDNIGHT_OFFSET)
+                            except Exception as e:
+                                logger.error(f'Failed shutting down ASG: {autoscaling_group_name}')
+                                raise e
+
+                            logger.info(' ')
+
+                except Exception as e:
+                    logger.error(f'Failed executing actions on: {autoscaling_group_name}')
+                    raise Exception(f"Failed executing actions on: {autoscaling_group_name}, error:{e}")
+                print()
+
+        except Exception as e:
+            logger.error(f'Failed action while executing in: {account_number}')
+            logger.error(f'{e}')
+
+
+def log_asg_to_dynamo(dynamo_client: boto3.client,
+                      autoscaling_group_name: str,
+                      current_min_size: str,
+                      current_max_size: str,
+                      current_desired_capacity: str):
+    """
+    Adds/updates row in dynamo table with minSize, maxSize, desiredCapacity of autoscaling group
+    :param dynamo_client: boto3.client
+    :param autoscaling_group_name: string
+    :param current_min_size: string
+    :param current_max_size: string
+    :param current_desired_capacity: string
+    :return: string
+    """
+
+    #  Handle possibility that something goes wrong and do not adjust ASGs that are already shutdown
+    if current_desired_capacity != 0 and current_min_size != 0:
+        # Verify dynamo table is exists
+        try:
+            _response = dynamo_client.describe_table(TableName='AutoShutdownStartup-AutoscalingGroups')
+        except Exception as e:
+            logger.error(f'AutoShutdownStartup DynamoDB Table not found.  Autoscaling group will not shutdown.')
+            raise e
+
+        # Log current ASG properties to dynamo
+        try:
+            logger.info(f'Updating AutoShutdownStartup DynamoBD Table values for: {autoscaling_group_name}')
+            response = dynamo_client.put_item(TableName='AutoShutdownStartup-AutoscalingGroups',
+                                              Item={'AutoScalingGroupName': {'S': autoscaling_group_name},
+                                                    'minSize': {'S': str(current_min_size)},
+                                                    'maxSize': {'S': str(current_max_size)},
+                                                    'desiredCapacity': {'S': str(current_desired_capacity)}})
+            response = response['ResponseMetadata']['HTTPStatusCode']
+            if response == 200:
+                logger.info(f'Successfully logged {autoscaling_group_name} to dynamo')
+                return response
+            else:
+                logger.info(f'Logging to dynamo returned {response}')
+                logger.info(f'Logging {autoscaling_group_name} to dynamo failed')
+                return response
+        except Exception as e:
+            logger.error(f'Failed write ASG properties to dynamo')
+            raise e
+    else:
+        logger.info(f'AutoScaling Group already shutdown.  No action taken on {autoscaling_group_name}')
+        return None
+
+
+def get_asg_from_dynamo(dynamo_client: boto3.client,
+                        autoscaling_group_name: str):
+    """
+    Gets row values of autoscaling_group_name if it exists in the dynamo table
+    :param dynamo_client: boto3 client
+    :param autoscaling_group_name: string
+    :return: string
+    """
+
+    # Verify dynamo table is exists
+    try:
+        _response = dynamo_client.describe_table(TableName='AutoShutdownStartup-AutoscalingGroups')
+    except Exception as e:
+        logger.error(f'AutoShutdownStartup DynamoDB Table not found.  Autoscaling group will not shutdown.')
+        raise e
+
+    # Get ASG properties from dynamo
+    try:
+        response = dynamo_client.get_item(TableName='AutoShutdownStartup-AutoscalingGroups',
+                                          Key={'AutoScalingGroupName': {'S': autoscaling_group_name}})
+        logger.debug(f'response for {autoscaling_group_name}: {response}')
+        try:
+            exists = response['Item']
+            logger.debug(f'exists: {exists}')
+            return response
+        except Exception as e:
+            logger.debug(f'{e} does not exist')
+            logger.debug(f"ASG doesn't exist in table, so it will be created.")
+            return None
+    except Exception as e:
+        logger.error(f'Failed retrieving ASG properties from dynamo')
+        raise e
+
+
+def process_shutdown_action(autoscaling_client: boto3.client,
+                            autoscaling_group_name: str,
+                            asg_shutdown_value: str,
+                            utc_date_time: datetime,
+                            noon_offset: int,
+                            midnight_offset: int):
+    """
+    Sets autoscaling group's minSize, maxSize, and desiredCapacity to 0 if specified time matches the
+    current time
+    :param autoscaling_client: boto3 client
+    :param autoscaling_group_name: string
+    :param asg_shutdown_value: string
+    :param utc_date_time: string
+    :param noon_offset: int
+    :param midnight_offset: int
+    :return: int
+    """
+
+    asg_shutdown_value = asg_shutdown_value.lower()
+    #  Handle ShutDownInstanceAt != false
+    if 'false' not in asg_shutdown_value:
+        asg_shutdown_value = asg_shutdown_value.split(' ')[0]
+        if 'pm' in asg_shutdown_value:
+            # Handle noon
+            if '12' in asg_shutdown_value:
+                asg_shutdown_value = int(asg_shutdown_value.split('pm')[0])
+                logger.info(f'asg_shutdown_value: {asg_shutdown_value}')
+            else:
+                asg_shutdown_value = (int(asg_shutdown_value.split('pm')[0]) + noon_offset)
+                logger.info(f'asg_shutdown_value: {asg_shutdown_value}')
+
+        elif 'am' in asg_shutdown_value:
+            # Handle midnight
+            if '12' in str(asg_shutdown_value):
+                asg_shutdown_value = (int(asg_shutdown_value.split('am')[0]) - midnight_offset)
+            else:
+                asg_shutdown_value = int(asg_shutdown_value.split('am')[0])
+            logger.debug(f'asg_shutdown_value: {asg_shutdown_value}')
+
+        logger.debug(f'utc_date_time.hour: {utc_date_time.hour}')
+
+        if asg_shutdown_value == utc_date_time.hour:
+            logger.info(f'Adjusting Autoscaling Limits for Power Off on {autoscaling_group_name}')
+            #  Shutdown Autoscaling Groups
+            response = autoscaling_client.update_auto_scaling_group(
+                    AutoScalingGroupName=autoscaling_group_name,
+                    MinSize=0,
+                    MaxSize=0,
+                    DesiredCapacity=0)
+
+            response = response['ResponseMetadata']['HTTPStatusCode']
+            if response == 200:
+                logger.info(f'Successfully powered off {autoscaling_group_name}')
+                return response
+            else:
+                logger.info(f'Powering off autoscaling group returned {response}')
+                logger.info(f'Powering off {autoscaling_group_name} failed')
+                return response
+        else:
+            logger.info(f'No PowerOff Action take on: {autoscaling_group_name}')
+    else:
+        logger.info(f'No Shutdown action taken on {autoscaling_group_name}')
+        return None
+
+
+def process_poweron_action(autoscaling_client: boto3.client,
+                           autoscaling_group_name: str,
+                           asg_poweron_value: str,
+                           utc_date_time: datetime,
+                           noon_offset: int,
+                           midnight_offset: int,
+                           desired_min_size: str,
+                           desired_max_size: str,
+                           desired_capacity: str):
+    """
+    Sets autoscaling group's minSize, maxSize, and desiredCapacity to specified values if specified time matches the
+    current time
+    :param autoscaling_client: boto3 client
+    :param autoscaling_group_name: string
+    :param asg_poweron_value: string
+    :param utc_date_time: string
+    :param noon_offset: int
+    :param midnight_offset: int
+    :param desired_min_size: string
+    :param desired_max_size: string
+    :param desired_capacity: string
+    :return: int
+    """
+
+    asg_poweron_value = asg_poweron_value.lower()
+    #  Handle PowerOnInstanceAt != false
+    if 'false' not in asg_poweron_value:
+        asg_poweron_value = asg_poweron_value.split(' ')[0]
+        if 'pm' in asg_poweron_value:
+            # Handle noon
+            if '12' in asg_poweron_value:
+                asg_poweron_value = int(asg_poweron_value.split('pm')[0])
+                logger.info(f'asg_poweron_value: {asg_poweron_value}')
+            else:
+                asg_poweron_value = (int(asg_poweron_value.split('pm')[0]) + noon_offset)
+                logger.info(f'asg_poweron_value: {asg_poweron_value}')
+        elif 'am' in asg_poweron_value:
+            # Handle midnight
+            if '12' in str(asg_poweron_value):
+                asg_poweron_value = (int(asg_poweron_value.split('am')[0]) - midnight_offset)
+            else:
+                asg_poweron_value = int(asg_poweron_value.split('am')[0])
+            logger.debug(f'asg_poweron_value: {asg_poweron_value}')
+
+        logger.debug(f'utc_date_time.hour: {utc_date_time.hour}')
+
+        if asg_poweron_value == utc_date_time.hour:
+            logger.info(f'Adjusting Power On Autoscaling Limits for on {autoscaling_group_name}')
+
+            # Verify ASG isn't already PowerOn
+            asg_response = autoscaling_client.describe_auto_scaling_groups(
+                AutoScalingGroupNames=[autoscaling_group_name])
+            logger.info(f'asg_response: {asg_response}')
+            current_desired_capacity = asg_response['AutoScalingGroups']
+            for resp in current_desired_capacity:
+                current_desired_capacity = resp['DesiredCapacity']
+            logger.info(f'current_desired_capacity--- : {current_desired_capacity}')
+
+            #  PowerOn Autoscaling Groups
+            response = autoscaling_client.update_auto_scaling_group(AutoScalingGroupName=autoscaling_group_name,
+                                                                    MinSize=int(desired_min_size),
+                                                                    MaxSize=int(desired_max_size),
+                                                                    DesiredCapacity=int(desired_capacity))
+
+            return response
+        return None
+    else:
+        logger.info(f'No PowerOn action taken on {autoscaling_group_name}')
+        return None
