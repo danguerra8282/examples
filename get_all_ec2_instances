@@ -1,0 +1,22 @@
+# ***May need to run ntlmMap***
+# In cmd.exe:
+#   set https_proxy=proxyUrl:8080
+#   C:\Users\userName\.aws>"main (1).exe"
+#   To verify:  aws s3 ls --profile a-CLOUDADMIN-AWS --region us-east-1
+
+# Import Modules
+import boto3
+from botocore.config import Config
+
+# Set Sessions
+session = boto3.Session(profile_name="a-CLOUDADMIN-AWS")
+ec2 = session.client('ec2', region_name = 'us-east-1',config=Config(proxies={'https': 'proxyUrl:8080'}))
+
+# Get all instances
+response = ec2.describe_instances()
+print(response)
+for res in response['Reservations']:
+    for Inst in res['Instances']:
+        print(Inst['InstanceId'])
+print("--------------")
+print("")
