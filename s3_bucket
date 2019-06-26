@@ -1,0 +1,64 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create s3 bucket with across account access
+Parameters:
+  pS3BucketName:
+    Description: Name for the S3 Bucket
+    Type: String
+    Default: 0-test
+Resources:
+  rBucket:
+    Type: AWS::S3::Bucket
+    #DeletionPolicy: Retain
+    DeletionPolicy: Delete
+    Properties: 
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'aws:kms'
+            KMSMasterKeyID: arn:aws:kms:us-east-1:account#:key/uuid
+              #- !ImportValue oS3Key
+      BucketName: 
+        Ref: pS3BucketName
+      VersioningConfiguration:
+          Status: Enabled
+        
+  rLambdaArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: rBucket
+    Properties:
+      Bucket: !Ref rBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyUnEncryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub ${rBucket.Arn}/*
+            Condition:
+              #StringNotEquals:
+              #  s3:x-amz-server-side-encryption: aws:kms
+              Bool:
+                aws:SecureTransport: false
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: !Sub ${rBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: AccessToBucketd
+            Action:
+              - s3:*
+            Effect: Allow
+            Resource:
+              -  !Sub ${rBucket.Arn}
+              -  !Sub ${rBucket.Arn}/*
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+                - !Sub arn:aws:iam::account#:root
+                - !Sub arn:aws:iam::account#:root
+                - !Sub arn:aws:iam::account#:root
+             
