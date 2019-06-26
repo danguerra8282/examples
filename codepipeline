@@ -1,0 +1,485 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodePipeline (Foundational-AMI)
+ 
+Parameters:
+  pProduct:
+    Type: String
+    Description: Product Name
+    Default: ""
+  pBusinessUnit:
+    Type: String
+    Description: Business Unit Name
+    Default: ""
+  pRegion:
+    Type: String
+    Description: Region
+    Default: ""
+
+  pMasterAccountNumber:
+    Type: String
+    Description: Master Account Number
+    Default: ""
+  pSharedProdAccountNumber:
+    Type: String
+    Description: SharedProd Account Number
+    Default: ""
+  pSharedTestAccountNumber:
+    Type: String
+    Description: SharedProd Account Number
+    Default: ""
+  pSharedDevAccountNumber:
+    Type: String
+    Description: SharedProd Account Number
+    Default: ""
+
+  pCodepipelineKmsKey:
+    Type: String
+    Description: Codepipeline KMS Key Arn
+    Default: ""
+  pCodepipelineSourceBucket:
+    Type: String
+    Description: Codepipeline Source Bucket
+    Default: ""
+  pCodepipelineArtifactBucket:
+    Type: String
+    Description: Codepipeline Artifact Bucket
+    Default: ""
+  pCodebuildProject:
+    Type: String
+    Description: Codebuild Project
+    Default: ""
+  pCodepipelineServiceRole:
+    Type: String
+    Description: Codepipeline Service Role
+    Default: ""
+  pCodePipelineActionRole:
+    Type: String
+    Description: Cloudformation Action Role
+    Default: ""
+
+# ----------- Required tags ----------- #
+  pAlert:
+    Type: String
+    Description: Tag which control stop of instances (EC2:Scheduler)
+  pPatch:
+    Type: String
+    Description: Tag which indicates if patches will occur on an instance
+  pAutoShutDown8pm:
+    Description: Flag to indicate that an instance can be shut down at 8pm
+    Type: String
+  pDisbursementCode:
+    Description: Cost Center equivalent
+    Type: String
+  pResourceOwner:
+    Description: Main contact for the resource / asset- Application Owner, Data Owner (NWIE ID)
+    Type: String
+  pAPRMID:
+    Description: Application ID
+    Type: String
+  pDataClassification:
+    Description: Public Data, Internal Use Only, Confidential or PCI
+    Type: String
+
+Resources:
+  rApprovalSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${pProduct}-${pBusinessUnit}-Deployment-Approval
+      TopicName: !Sub ${pProduct}-${pBusinessUnit}-Deployment-Approval
+
+  rPipelineEventRuleSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${pProduct}-${pBusinessUnit}-Pipeline-Notification
+      TopicName: !Sub ${pProduct}-${pBusinessUnit}-Pipeline-Notification
+
+  rCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        EncryptionKey:
+          Id: !Ref pCodepipelineKmsKey
+          Type: KMS
+        Location: !Ref pCodepipelineArtifactBucket
+        Type: S3
+      Name: !Sub ${pProduct}-${pBusinessUnit}
+      RoleArn: !Sub arn:aws:iam::${pSharedProdAccountNumber}:role/${pCodepipelineServiceRole}
+      Stages:
+        - Name: Source
+          Actions:
+            - ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              Configuration:
+                S3Bucket: !Ref pCodepipelineSourceBucket
+                S3ObjectKey: !Sub 'deploy.zip'
+              Name: Application_Source
+              OutputArtifacts:
+                - Name: Source
+              RunOrder: 1
+        - Name: UpdatePipeline
+          Actions:
+            - Name: Update_CodePipeline
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Scan_Update_CodePipeline
+                UserParameters: '{"cfn_template": "iac/CloudFormation/CodePipeline.yaml",
+                "cfn_parameter": "iac/CloudFormation/CodePipeline.json"}'
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts: []
+              RunOrder: 1
+        
+        - Name: All-Base_Config
+          Actions:
+            # - Name: Create_NW-Cloudformation-Instance-Build_All_Accounts
+            #   ActionTypeId:
+            #     Category: Invoke
+            #     Owner: AWS
+            #     Provider: Lambda
+            #     Version: '1'
+            #   Configuration:
+            #     FunctionName: Multi_Account_CloudFormation
+            #     #UserParameters: !Sub '{"template": "iac/CloudFormation/CreateRole-NW-CloudFormation-Instance-Build.yaml", "templateParams": "", "product": "${pProduct}", "timestamp": "False"}'
+            #     UserParameters: !Sub '{"template": "iac/CloudFormation/CreateRole-NW-CloudFormation-Instance-Build.yaml", "templateParams": "iac/CloudFormation/CreateRole-NW-CloudFormation-Instance-Build.json", "product": "${pProduct}", "timestamp": "False",  "omitAccounts":"DevCDT01,TestCDT01,ProdCDT01"}'
+            #   InputArtifacts:
+            #     - Name: Source
+            #   OutputArtifacts: []
+            #   RunOrder: 1
+            - Name: Create_KMS_srvinstl_in_All_Accounts
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Multi_Account_CloudFormation
+                UserParameters: !Sub '{"template": "iac/CloudFormation/createKmsKey-srvinstl.yaml", "templateParams": "iac/CloudFormation/createKmsKey-srvinstl.json", "product": "${pProduct}", "timestamp": "False", "omitAccounts":"TestDW01,TestIAS01,DevCDT01,TestCDT01,ProdCDT01"}'
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts: []
+              RunOrder: 2
+
+        - Name: InfraSvcsProd
+          Actions:
+            - Name: CreateUpdate_nw_s3_KmsKey
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Multi_Account_CloudFormation
+                UserParameters: !Sub '{"template": "iac/CloudFormation/createNwS3KmsKey.yaml", "templateParams": "iac/CloudFormation/createNwS3KmsKey-InfraSvcsProd.json", "product": "${pProduct}", "timestamp": "False"}'
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts: []
+              RunOrder: 1 
+            - Name: CreateUpdate_nw-windows01_S3_Bucket
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Multi_Account_CloudFormation
+                UserParameters: !Sub '{"template": "iac/CloudFormation/createS3Bucket.eyaml", "templateParams": "iac/CloudFormation/createS3Bucket-InfraSvcsProd.json", "product": "${pProduct}", "timestamp": "False"}'
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts: []
+              RunOrder: 2   
+
+        - Name: BuildAndPackage
+          Actions:
+            - Name: Bake_AMI
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Sub ${pProduct}-${pBusinessUnit}-AMI-Bake-${pRegion}
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts:
+                - Name: Package
+                - Name: InfraSvcsEncryptAMI
+                #- Name: !Sub ${pBusinessUnit}EncryptAMI
+              RunOrder: 2
+            - Name: BakeApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                NotificationArn: !Sub arn:aws:sns:us-east-1:${AWS::AccountId}:DeliveryPipelineManualApproval
+              InputArtifacts: []
+              RoleArn: !Sub arn:aws:iam::${pSharedProdAccountNumber}:role/${pCodePipelineActionRole}
+              RunOrder: 3
+            - Name: Get_Pipeline_Artifacts
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Get_Pipeline_Artifacts
+              InputArtifacts:
+                - Name: Source
+                - Name: Package
+              OutputArtifacts: []
+              RunOrder: 4
+            - Name: Share_AMI
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Share_AMI
+                UserParameters: '{"baked_encrypted":"true"}'
+              # InputArtifacts: []
+              InputArtifacts:
+                - Name: InfraSvcsEncryptAMI
+              OutputArtifacts: []
+              RunOrder: 5
+
+        #- Name: ServiceNow
+        #  Actions:
+        #    - Name: RFC
+        #      ActionTypeId:
+        #        Category: Invoke
+        #        Owner: AWS
+        #        Provider: Lambda
+        #        Version: '1'
+        #      Configuration:
+        #        FunctionName: ServiceNowPipelineResource
+        #        # If you are using a dummy APRM ID, add "pSupportGroup" key into UserParameters with a value of a valid support group in servicenow
+        #        UserParameters: '{"sn_location":"uat", "pSupportGroup":"NSC-BUILD-X86-PLATFORM"}'
+        #      InputArtifacts:
+        #        - Name: Source
+        #      OutputArtifacts: []
+        #      RunOrder: 1
+        #    - Name: Create_RFC
+        #      ActionTypeId:
+        #        Category: Invoke
+        #        Owner: AWS
+        #        Provider: Lambda
+        #        Version: '1'
+        #      Configuration:
+        #        FunctionName: ServiceNowPipelineChange
+        #        # Adjust these to what you think you would need. Delay means when the RFC will start and length is how long the RFC should be
+        #        UserParameters: '{"action":"create", "sn_location":"uat","delay":60,"length":30}'
+        #      InputArtifacts:
+        #        - Name: Source
+        #      OutputArtifacts: []
+        #      RunOrder: 2    
+        
+        - Name: !Sub ${pBusinessUnit}Dev
+          Actions:
+            # - Name: Encrypt_AMI
+            #   ActionTypeId:
+            #     Category: Invoke
+            #     Owner: AWS
+            #     Provider: Lambda
+            #     Version: '1'
+            #   Configuration:
+            #     FunctionName: Encrypt_AMI_Py3
+            #   InputArtifacts:
+            #     - Name: Package
+            #   OutputArtifacts:
+            #     - Name: !Sub ${pBusinessUnit}DevEncryptAMI
+            #   RunOrder: 1
+            - Name: Deploy_SecurityGroup
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_NAMED_IAM
+                RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+                StackName: !Sub ${pProduct}-SecurityGroup-${pBusinessUnit}Dev
+                TemplateConfiguration: !Sub Source::iac/CloudFormation/SecurityGroup-${pBusinessUnit}Dev.json
+                TemplatePath: Source::iac/CloudFormation/SecurityGroup.yaml
+                OutputFileName: !Sub ${pBusinessUnit}DevSecurityGroupOutput.json
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts:
+                - Name: !Sub ${pBusinessUnit}DevSG
+              RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+              RunOrder: 1
+            - Name: Deploy_ProductRole
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_NAMED_IAM
+                RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+                StackName: !Sub ${pProduct}-IAMRole-${pBusinessUnit}Dev
+                TemplateConfiguration: !Sub Source::iac/CloudFormation/ProductRole-${pBusinessUnit}Dev.json
+                TemplatePath: Source::iac/CloudFormation/ProductRole.yaml
+                OutputFileName: !Sub ${pBusinessUnit}DevProductRoleOutput.json
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts:
+                - Name: !Sub ${pBusinessUnit}DevRole
+              RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+              RunOrder: 1
+            - Name: Deploy_EC2
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_NAMED_IAM
+                RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+                StackName: !Sub ${pProduct}-EC2-${pBusinessUnit}Dev
+                TemplateConfiguration: !Sub Source::iac/CloudFormation/EC2-${pBusinessUnit}Dev.json
+                TemplatePath: Source::iac/CloudFormation/EC2.yaml
+              InputArtifacts:
+                - Name: Source
+                - Name: !Sub ${pBusinessUnit}DevSG
+                # - Name: !Sub ${pBusinessUnit}DevEncryptAMI
+                - Name: !Sub ${pBusinessUnit}EncryptAMI
+                - Name: !Sub ${pBusinessUnit}DevRole
+              OutputArtifacts: []
+              RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+              RunOrder: 2
+            - Name: Application_Validation
+              ActionTypeId:
+                Category: Test
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Sub ${pProduct}-${pBusinessUnit}-AppValidate-${pRegion}
+              InputArtifacts:
+                - Name: Source
+              RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+              RunOrder: 3
+
+        - Name: !Sub ${pBusinessUnit}Dev_Approval
+          Actions:
+            - Name: DevelopmentApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                NotificationArn: !Sub arn:aws:sns:us-east-1:${AWS::AccountId}:DeliveryPipelineManualApproval
+              InputArtifacts: []
+              RoleArn: !Sub arn:aws:iam::${pSharedProdAccountNumber}:role/${pCodePipelineActionRole}
+              RunOrder: 1
+            - Name: Destroy_EC2
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: DELETE_ONLY
+                RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+                StackName: !Sub ${pProduct}-EC2-${pBusinessUnit}Dev
+              InputArtifacts: []
+              OutputArtifacts: []
+              RoleArn: !Sub arn:aws:iam::${pSharedDevAccountNumber}:role/${pCodePipelineActionRole}
+              RunOrder: 2
+
+        - Name: !Ref pBusinessUnit
+          Actions:
+            - Name: Publish_AMI
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Publish_AMI
+                UserParameters: !Sub '{"search_filter":"${pProduct}"}'
+              InputArtifacts:
+                #- Name: Package
+                - Name: InfraSvcsEncryptAMI
+              OutputArtifacts: []
+              RunOrder: 1
+
+        - Name: All-EveryAccounts
+          Actions:
+            - Name: Create_KMS_Accounts
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: Multi_Account_CloudFormation
+                UserParameters: !Sub '{"template": "iac/CloudFormation/Kms.yaml", "templateParams": "iac/CloudFormation/Kms.json", "product": "${pProduct}", "timestamp": "False"}'
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts: []
+              RunOrder: 1
+            # - Name: Encrypt_AMI_Accounts
+            #   ActionTypeId:
+            #     Category: Invoke
+            #     Owner: AWS
+            #     Provider: Lambda
+            #     Version: '1'
+            #   Configuration:
+            #     FunctionName: Encrypt_AMI_Py3
+            #   InputArtifacts:
+            #     - Name: Package
+            #   OutputArtifacts:
+            #     - Name: EncryptedDevAMIs
+            #   RunOrder: 2
+
+        # - Name: !Sub UnShare-Stage
+        #   Actions:
+        #     - Name: UnShare_AMI
+        #       ActionTypeId:
+        #         Category: Invoke
+        #         Owner: AWS
+        #         Provider: Lambda
+        #         Version: '1'
+        #       Configuration:
+        #         FunctionName: UnShare_AMI
+        #       InputArtifacts: []
+        #       OutputArtifacts: []
+        #       RunOrder: 1
+        
+        #- Name: ServiceNowClose
+        #  Actions:
+        #    - Name: Close_RFC
+        #      ActionTypeId:
+        #        Category: Invoke
+        #        Owner: AWS
+        #        Provider: Lambda
+        #        Version: '1'
+        #      Configuration:
+        #        FunctionName: ServiceNowPipelineChange
+        #        UserParameters: '{"action":"close","sn_location":"uat"}'
+        #      InputArtifacts:
+        #        - Name: Source
+        #      OutputArtifacts: []
+        #      RunOrder: 2
+
+Outputs:
+  oCodePipeline:
+    Value: !Ref rCodePipeline
+  oApprovalSNSTopic:
+    Value: !Ref rApprovalSNSTopic
+  oPipelineEventRuleSNSTopic:
+    Value: !Ref rPipelineEventRuleSNSTopic
