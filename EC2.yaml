@@ -1,0 +1,212 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploys an EC2 instance
+Parameters:
+  pServerName:
+    Description: Name of the instance
+    Type: String
+  pIamInstanceProfile:
+    Description: Name of the instance profile name
+    Type: String
+  pInstanceType:
+    Description: Amazon EC2 instance type
+    Type: String
+    Default: t2.medium
+  pImageId:
+    Description: AMI ID that will be provisioned
+    Type: String
+  pSecurityGroup:
+    Description: List of Security Groups to add to EC2 instance
+    Type: AWS::EC2::SecurityGroup::Id
+  pKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: WindowsPlatformEng
+
+  # Tags
+  pAlert:
+    Description: If alerting should be enabled on this instance
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+      - True
+      - False
+  pAutoShutDown8pm:
+    Description: If set to true then the instance will be automatically shutdown at 8pm EST to ensure cost savings
+    Type: String
+    Default: True=EST
+    AllowedValues:
+      - false
+      - False
+      - True=EST
+      - True=CST
+      - True=MST
+      - True=PST
+  pDisbursementCode:
+    Type: String
+    AllowedPattern: ^[0-9]*$
+  pResourceOwner:
+    Description: A nwie ID for who should be listed as the owner of the instance
+    Type: String
+    AllowedPattern: .*\S.*
+  pAPRMID:
+    Description: APRM ID for the application running on the instance
+    Type: String
+    AllowedPattern: .*\S.*
+  pDataClassification:
+    Type: String
+    AllowedPattern: .*\S.*
+    AllowedValues:
+      - Public_Data
+      - Internal_Use_Only
+      - Confidential
+      - PCI
+  pResourceName:
+    Type: String
+    AllowedPattern: .*\S.*
+  pPatch:
+    Description: Select the patching method.  Select Patch only if the instance will exist for more than 30 days
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+      - True
+      - False
+  pSecurityException:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+      - True
+      - False
+  pEnvironment:
+    Description: Deployment Environment
+    Type: String
+
+  # Windows Parameters
+  pAppAdmins:
+    Type: String
+    Description: Optional.  Comma separated list of users or AD groups that will be granted Power User/Administrator access to the instance using the AdminMe website (adminme.nwie.net).
+  pIIS:
+    Type: String
+    AllowedValues:
+      - true
+      - false
+  pDNSAlias:
+    Type: String
+    Description: Optional.  The prefered DNS Alias / Friendly name for this instance.  The Active Directory group used for accessing the instance will use this name.  Do not use spaces.
+Resources:
+  WindowsServer:
+    Type: AWS::EC2::Instance
+    Metadata:                 ######## Please do not remove lines 99-127 as this section makes this a Nationwide compliant server.  Feel free to add to this section. ########
+      AWS::CloudFormation::Init:
+        configSets:
+          config:
+          - Write_Windows-Starter
+          - Execute_Windows-Starter
+          - Execute_Windows-Configure-NewServer
+        Write_NW-Windows-Starter:
+          files:
+            c:\cfn\scripts\Windows-Starter.ps1:
+              content:
+                Fn::Sub:
+                  Copy-S3Object -BucketName nw-windows01 -KeyPrefix InstanceBuilder -LocalFolder c:\nwtools\build\InstanceBuilder;
+                  # powershell.exe -command "Add-WindowsFeature -Name RSAT-AD-Tools";
+                  # powershell.exe -command "Restart-Computer -force -confirm:`$false"
+        Execute_NW-Windows-Starter:
+          commands:
+            WindowsServer:
+              command:
+                Fn::Sub:
+                  powershell.exe -command c:\cfn\scripts\Windows-Starter.ps1
+              waitAfterCompletion: '120'
+        Execute_Windows-Configure-NewServer:
+          commands:
+            WindowsServer:
+              command:
+                Fn::Sub:
+                  powershell.exe -command c:\nwtools\build\InstanceBuilder\Windows-Configure-NewServer_2_0_0.ps1;
+                  #powershell.exe -command c:\nwtools\build\InstanceBuilder\Windows-Configure-NewServer.ps1
+              waitAfterCompletion: '120' ######## Please do not remove lines 99-127 as this section makes this a Nationwide compliant server.  Feel free to add to this section. ########
+    Properties:
+      Tags:
+      -
+        Key: "Name"
+        Value:
+          Ref: pServerName
+      -
+        Key: "DNS_Name"
+        Value: AWS::PrivateDnsName
+      -
+        Key: "ARecord"
+        Value: 
+          Ref: pDNSAlias
+      -
+        Key: "Alert"
+        Value:
+          Ref: pAlert
+      -
+        Key: "AutoShutDown8pm"
+        Value:
+          Ref: pAutoShutDown8pm
+      -
+        Key: "DisbursementCode"
+        Value:
+          Ref: pDisbursementCode
+      -
+        Key: "ResourceOwner"
+        Value:
+          Ref: pResourceOwner
+      -
+        Key: "APRMID"
+        Value:
+          Ref: pAPRMID
+      -
+        Key: "DataClassification"
+        Value:
+          Ref: pDataClassification
+      -
+        Key: "ResourceName"
+        Value:
+          Ref: pResourceName
+      -
+        Key: "Patch"
+        Value:
+          Ref: pPatch
+      -
+        Key: "SecurityException"
+        Value:
+          Ref: pSecurityException
+      -
+        Key: "AppAdmins"
+        Value:
+          Ref: pAppAdmins
+      - 
+        Key: "IIS"
+        Value:
+          Ref: pIIS
+      InstanceType:
+        Ref: pInstanceType
+      ImageId: !Ref pImageId
+      IamInstanceProfile: CloudFormation-Instance-Build
+      SecurityGroupIds:
+        - !Ref pSecurityGroup
+        - !ImportValue ToolsAccessSG
+      SubnetId: !ImportValue oPrivateSubnetA
+      KeyName:
+        Ref: pKeyPair
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - "<script>\n"
+            - 'cfn-init.exe -v -c config -s '
+            - Ref: AWS::StackId
+            - " -r WindowsServer"
+            - " --region "
+            - Ref: AWS::Region
+            - "\n"
+            - "</script>\n"
