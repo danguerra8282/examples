@@ -74,7 +74,7 @@ phases:
       - echo $region
       # - ami_id=$(./jq -r '.builds.[0].artifact_id' manifest.json)
       # - encrypted_ami=$(aws ec2 copy-image --source-image-id $ami_id --source-region $region --region $region --encrypted --kms-key-id arn:aws:kms:us-east-1:679177070049:key/d91e2cbd-71cb-46a2-bac5-ea6715362cfd --name $PIPELINE_NAME)
-      - encrypted_ami=$(aws ec2 copy-image --source-image-id $ami_id --source-region $region --region $region --encrypted --kms-key-id arn:aws:kms:us-east-1:679177070049:key/8fa78775-7773-4ff0-96c5-d91c2bf87936 --name $PIPELINE_NAME)
+      - encrypted_ami=$(aws ec2 copy-image --source-image-id $ami_id --source-region $region --region $region --encrypted --kms-key-id arn:aws:kms:arnUUID --name $PIPELINE_NAME)
       # - encrypted_ami=`aws ec2 copy-image --source-image-id $ami_id --source-region $region --encrypted --name "guerrad4_testing_ami_encrypted"`
       #- encrypted_ami=`aws ec2 copy-image --source-image-id $ami_id --source-region $region --encrypted --name "guerrad4_testing_ami_encrypted" 2>&1 `
       #- aws ec2 copy-image --source-image-id $ami_id --source-region $region --encrypted --name "guerrad4_testing_ami_encrypted" > thisFile.txt
