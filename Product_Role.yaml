@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Product Role for deployed EC2 instances. Built from a Production Pipeline.
+
+Parameters:
+  pProductName:
+    Type: String
+  pEnvironment:
+    Type: String
+
+Resources:
+  rProductInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${pProductName}-EC2-${pEnvironment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: !Sub "${pProductName}-Policy"
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action:
+              - 'ssm:DescribeParameters'
+              - 'ec2:DescribeTags'
+            Resource: '*'
+            Effect: Allow
+          - Action:
+              - 'ssm:GetParameters'
+            Resource: '*'
+            Effect: Allow
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:DescribeLogStreams'
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${pProductName}"
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${pProductName}*"
+            Effect: Allow
+          - Action:
+              - 's3:ListBucket'
+              - 's3:GetBucketLocation'
+              - 's3:GetBucketAcl'
+              - 's3:GetObject'
+              - 's3:GetObjectAcl'
+            Resource: '*'
+            Effect: Allow
+          - Action:
+              - 'kms:Decrypt'
+            Resource: '*'
+            Effect: Allow
+
+  rProductInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref rProductInstanceRole
+
+Outputs:
+  oProductInstanceProfileArn:
+    Value: !GetAtt rProductInstanceProfile.Arn
+
+  oProductInstanceProfileName:
+    Value: !Ref rProductInstanceProfile
+
+  oProductInstanceRoleARN:
+    Value: !GetAtt rProductInstanceRole.Arn
