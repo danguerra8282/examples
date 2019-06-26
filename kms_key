@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloudformation to create a KMS key in an account.
+Parameters:
+  pAccountName:
+    Description: The local account name
+    Type: String
+
+Resources:
+  rKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "Local srvinstl KMS key for infrastructure secret encryption"
+      Enabled: true
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "nwS3"
+        Statement:
+          -
+            Sid: "Allow administration of the key"
+            Effect: "Allow"
+            Principal:
+              AWS: 
+                - !Sub arn:aws:iam::${AWS::AccountId}:role/${pAccountName}-CLOUDADMIN-AWS
+                - !Sub arn:aws:iam::${AWS::AccountId}:role/MULTI-ACCOUNT-DEPLOY-AWS
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+          -
+            Sid: "Allow use of the key"
+            Effect: "Allow"
+            Principal:
+              AWS: 
+                - !Sub arn:aws:iam::${AWS::AccountId}:role/${pAccountName}-CLOUDADMIN-AWS
+                - !Sub arn:aws:iam::account#:root
+                - !Sub arn:aws:iam::account#:root
+                - !Sub arn:aws:iam::account#:root
+                
+
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+  rProductKmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/aliasName
+      TargetKeyId: !Ref rKey
+
+Outputs:
+  oKey:
+    Value: !Ref rKey
