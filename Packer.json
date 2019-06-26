@@ -1,0 +1,88 @@
+{
+  "variables": {
+    "build_version": "1.0.0",
+    "aws_instance_type": "t2.large",
+    "aws_region": "us-east-1",
+    "aws_source_ami": "",
+    "aws_security_group_id": "sg-uuid",
+    "aws_subnet_id": "subnet-uuid",
+    "aws_vpc_id": "vpc-uuid",
+    "iam_instance_profile": "CloudFormation-Instance-Build",
+    "pipeline_exec_id": "",
+    "pipeline_name": "windowsServer2016Pipeline"
+  },
+
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "{{user `aws_region`}}",
+      "source_ami": "{{user `aws_source_ami`}}",
+      "instance_type": "{{user `aws_instance_type`}}",
+      "temporary_key_pair_name": "packer-keypair--windowsServer2016_v{{ user `build_version`}}",
+      "communicator": "winrm",
+      "winrm_username": "Administrator",
+      "user_data_file": "./iac/Packer/packer_userdata.ps1",
+      "winrm_use_ssl": true,
+      "winrm_insecure": true,
+      "winrm_port": 5986,
+      "windows_password_timeout": "20m",
+      "iam_instance_profile": "{{user `iam_instance_profile`}}",
+      "security_group_id": "{{user `aws_security_group_id`}}",
+      "subnet_id": "{{user `aws_subnet_id`}}",
+      "vpc_id": "{{user `aws_vpc_id`}}",
+      "ami_name": "windowsServer2016_v{{ user `build_version`}}-{{timestamp}}",
+      "ami_description": "windowsServer2016 AMI, built at {{timestamp}} from AMI: {{ user `aws_source_ami`}}",
+      "tags": {
+        "pf:Version": "{{ user `build_version`}}",
+        "pf:PipelineInfo": "{{user `pipeline_name`}}:{{user `pipeline_exec_id`}}",
+        "Name": "windowsServer2016_v{{ user `build_version`}}",
+        "pf:Foundational_AMI": "{{user `aws_source_ami`}}",
+        "Alert": "false",
+        "Patch": "false",
+        "AutoShutDown8pm": "false",
+        "DisbursementCode": "300919001",
+        "ResourceOwner": "guerrad4",
+        "APRMID": "123456",
+        "ResourceName": "windowsServer2016",
+        "DataClassification": "Internal_Use_Only"
+      },
+      "run_tags": {
+        "pf:PipelineInfo": "{{user `pipeline_name`}}:{{user `pipeline_exec_id`}}",
+        "Name": "AMI-Bake-Packer-windowsServer2016",
+        "pf:Foundational_AMI": "{{user `aws_source_ami`}}",
+        "Alert": "false",
+        "Patch": "false",
+        "AutoShutDown8pm": "false",
+        "DisbursementCode": "300919001",
+        "ResourceOwner": "name",
+        "APRMID": "123456",
+        "ResourceName": "windowsServer2016",
+        "DataClassification": "Internal_Use_Only"
+      }
+    }
+  ],
+
+  "provisioners": [
+    {
+      "destination": "C:\\Program Files\\Amazon\\SSM\\Plugins\\awsCloudWatch\\AWS.EC2.Windows.CloudWatch.json",
+      "source": "./iac/Packer/CloudWatch/AWS.EC2.Windows.CloudWatch.json",
+      "type": "file"
+    },
+    {
+      "type": "powershell",
+      "script": "./iac/Packer/install_nw_software.ps1"
+    },
+    {
+      "type": "powershell",
+      "script": "./iac/Packer/install_aws_services.ps1"
+    }
+  ],
+
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "manifest.json",
+      "strip_path": true
+    }
+  ]
+}
