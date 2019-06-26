@@ -1,0 +1,10 @@
+{
+  "Parameters": {
+    "pProductName": "windowsServer2016",
+    "pDisbursementCode": "300919001",
+    "pResourceOwner": "userName",
+    "pAPRMID": "123456",
+    "pResourceName": "windowsServer2016",
+    "pEnvironment": "accountName"
+  }
+}
