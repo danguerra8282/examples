@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Builds Security Groups. Built from a Production Pipeline.
+
+Parameters:
+  pProductName:
+    Type: String
+
+  # Required Tags
+  pDisbursementCode:
+    Description: Cost Center equivalent
+    Type: String
+    AllowedPattern: ^[0-9]{9}$
+    ConstraintDescription: Must be a valid Disbursement Code
+  pResourceOwner:
+    Description: Main contact for the resource / asset- Application Owner, Data Owner (NWIE ID)
+    Type: String
+  pAPRMID:
+    Description: Application ID
+    Type: String
+  pResourceName:
+    Description: Unique Name of the resource and its purpose.
+    Type: String
+  pEnvironment:
+    Description: Cost Center equivalent
+    Type: String
+
+Resources:
+  rInstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Enable ports for EC2 Instances so users can access to application.'
+      VpcId: !ImportValue oVPCID
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 10.0.0.0/8
+        Description: 'Primary Data Center Space/User Space/VPN'
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 172.16.0.0/12
+        Description: 'Legacy Data Center Space/Remote Locations'
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 192.168.0.0/16
+        Description: 'Mainframe'
+      Tags:
+      - Key: Name
+        Value: !Sub "${pProductName}-Instance-${pEnvironment}"
+      - Key: DisbursementCode
+        Value: !Ref pDisbursementCode
+      - Key: ResourceOwner
+        Value: !Ref pResourceOwner
+      - Key: APRMID
+        Value: !Ref pAPRMID
+      - Key: ResourceName
+        Value: !Ref pResourceName
+      - Key: Environment
+        Value: !Ref pEnvironment
+
+Outputs:
+  oInstanceSGId:
+    Value: !GetAtt rInstanceSG.GroupId
+    Export:
+      Name: !Sub "${pProductName}-SecurityGroup-Instance-${pEnvironment}"
