@@ -81,7 +81,31 @@ phases:
       - echo $encrypted_ami
       - encrypted_ami=$(echo $encrypted_ami |cut -d\" -f4)
       - echo $encrypted_ami
-      - sleep 8m
+      
+      - sleep 4m
+      - |
+        COMPLETE=false
+        while [ "$COMPLETE" == "false" ]
+        do
+          echo Waiting for AMI to be created
+          sleep 30
+          result=$(aws ec2 describe-images --image-ids $encrypted_ami)
+          echo ---------------------------------
+          state=$(echo $result | jq -r '.Images | .[0] | .State')
+
+          if [ $state == "available" ]; then
+            COMPLETE=true
+          elif [ $state == "invalid" ] || [ $state == "deregistered" ] || [ $state == "failed" ] || [ $state == "error" ]; then
+            echo "Failed to encrypt AMI"
+            echo "AMI Details:"
+            echo $result
+            exit 1
+          else
+            COMPLETE=false
+          fi
+        done
+        
+      # - sleep 8m
       # - COMPLETE=false
       #   while [ "$COMPLETE" == "false"]
       #   do
