@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloudformation to create lambda in an account.
+
+Parameters:
+  pRoleName:
+   Description: The IAM role name
+   Type: String
+  pLambdaName:
+    Description: The lambda function name.  Also used for the lambda_handler and the s3Key.
+    Type: String
+  
+Resources:
+  rIamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: 
+        Ref: pRoleName
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "lambda.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: !Ref: pRoleName
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - ec2:DescribeInstances
+                  - ec2:DescribeTags
+                  - ec2:CreateTags
+                  - ec2:DescribeInstanceAttribute
+                  - ec2:RunInstances
+                  - ec2:DescribeInstanceStatus
+                  - iam:ListAccountAliases
+                Resource: "*"
+              - 
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                Resource: 
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+
+  rIamProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - 
+          Ref: "rIamRole"
+
+  rLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Handler: !Sub "lambda_${pLambdaName}.lambda_handler"
+      Role: !GetAtt rIamRole.Arn
+      Code: 
+        S3Bucket: "xxx-lambda-functions-bucket-test"
+        S3Key: !Sub "lambda_${pLambdaName}.zip"
+      Runtime: python3.7
+
+  rLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !GetAtt rLambda.Arn
+      SourceArn: !GetAtt rCloudWatchRule.Arn
+      Principal: "events.amazonaws.com"
+
+  # rCloudWatchRule:
+  #   Type: AWS::Events::Rule
+  #   Properties:
+  #     Description: !Sub "CloudWatch event rule to execute the ${pLambdaName} Lambda"
+  #     EventPattern: 
+  #       source:
+  #         - "aws.ec2"
+  #       # detail-type:
+  #       #   - "AWS API Call via CloudTrail"
+  #       # detail: 
+  #       #   state: 
+  #       #     - "starting"
+  #     Name: !Sub "${pLambdaName}-CloudWatch-Rule"
+  #     State: "ENABLED"
+  #     Targets: 
+  #       - 
+  #         Arn: !GetAtt rLambda.Arn
+  #         Id: !Ref rLambda
+
+Outputs:
+  oIamRoleName:
+    Value: !Ref rIamRole
+
+  oIamRoleArn:
+    Value: !GetAtt rIamRole.Arn
+  
+  oIamProfileName:
+    Value: !Ref rIamProfile
+  
+  oIamProfileArn:
+    Value: !GetAtt rIamProfile.Arn
