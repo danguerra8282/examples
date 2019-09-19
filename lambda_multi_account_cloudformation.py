@@ -14,8 +14,8 @@ import json
 
 # Logging
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-# logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 logging.getLogger("botocore").setLevel(logging.ERROR)
 
 # CONSTANTS
@@ -280,7 +280,7 @@ def lambda_handler(_event, _context):
                 contents = open('/tmp/' + cloudformation_template_key[1], 'r').read()
                 logger.debug(f'contents: {contents}')
 
-                # Get Object ID of code (this will force the lambda code update)
+                # Get Object ID of code (this will force the code update)
                 print('cloudformation_template: ' + cloudformation_template)
                 template_code_key = cloudformation_template.replace(
                     'cloudformation_',
@@ -296,16 +296,32 @@ def lambda_handler(_event, _context):
                 )
                 logger.debug(f'template_code_key: {template_code_key}')
                 logger.info(f'Bucket={s3_bucket}, Key={str(template_code_key)}')
-                s3_object_version = s3_client.get_object(
-                    Bucket=s3_bucket,
-                    Key=template_code_key
-                )
+
+                try:
+                    s3_object_version = s3_client.get_object(
+                        Bucket=s3_bucket,
+                        Key=template_code_key
+                    )
+                except Exception as e:
+                    logger.info(f'template_code_key {template_code_key} ' \
+                        'not found')
+                    logger.info('Assuming cloudformation is not for a ' \
+                        'lambda function')
+                    # s3_object_version = None
+                    template_code_key = cloudformation_template
+                    s3_object_version = s3_client.get_object(
+                        Bucket=s3_bucket,
+                        Key=template_code_key
+                    )
+
                 logger.info(f's3_object_version: {s3_object_version}')
+
                 response = deploy_cloudformation(cloudformation_client,
                                                  cloudformation_template_url,
                                                  stack_name,
                                                  contents,
                                                  s3_object_version['VersionId'])
+
                 logger.info(f'cloudformation execution response: {response}')
 
             except Exception as e:
@@ -405,7 +421,9 @@ def get_s3_contents(s3_client,
     :return files: array of strings
     """
     files = []
+    print("#############################################")
     s3_contents = s3_client.list_objects(Bucket=s3_bucket)
+    print("#############################################")
     logger.debug(f's3_contents: {s3_contents}')
     for obj in s3_contents['Contents']:
         if search_string in obj['Key']:
