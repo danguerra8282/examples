@@ -1,0 +1,106 @@
+Description: Builds a CodeBuild project for Lambda Unit Tests
+Parameters:
+  pProjectName:
+    Type: String
+  # pServiceRole:
+  #   Type: String
+  # pArtifacts:
+  #   Description: Where the project artifacts will be stored
+  #   Type: String
+  # pSource:
+  #   Description: The source code settings for the project, such as the source code's repository type and location
+  #   Type: String
+
+
+Resources:
+  rIamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${pProjectName}-CodeBuild-IamRole"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "codebuild.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: !Sub "${pProjectName}-CodeBuild-IamRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - ec2:DescribeInstances
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - ec2:CreateTags
+                  - ec2:CreateImage
+                  - ec2:CopyImage
+                  - ec2:RegisterImage
+                Resource: "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - dynamodb:ListTables
+                  - dynamodb:DescribeTable
+                  - dynamodb:GetItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                Resource: "*"
+              - 
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                Resource: 
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+
+  rIamProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - 
+          Ref: "rIamRole"
+
+  rCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: !Ref pProjectName
+      ServiceRole: !Ref rIamRole
+      # Artifacts: !Ref pArtifacts
+      Artifacts:
+        Type: no_artifacts
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        # Image: aws/codebuild/standard:1.0
+        Image: aws/codebuild/python:3.6.5
+      Source:
+        Type: S3
+        # Location: unit-test-codebuild-source-autotagger/Source.zip
+        Location: unit-test-codebuild-source/Source.zip
+      ###
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-xxx
+        Subnets:
+          - subnet-xxx
+        VpcId: vpc-xxx
+      ###
+      TimeoutInMinutes: 60
