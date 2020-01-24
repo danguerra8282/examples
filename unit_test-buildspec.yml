@@ -17,7 +17,7 @@ phases:
       
       # Write unit test in separate python file that is included as an artifact
       - python PythonFiles/Unit_Test-Enforce_S3_Encryption.py
-      - python PythonFiles/Unit_Test-AEP_S3_Check_for_Public_Buckets.py
+      - python PythonFiles/Unit_Test-_S3_Check_for_Public_Buckets.py
       - python PythonFiles/Unit_Test-Auto_Shutdown_Startup.py
       - python PythonFiles/Unit_Test-KMS_Key_Rotation.py
       - python PythonFiles/Unit_Test-Required_Tags_Responder.py
