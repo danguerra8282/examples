@@ -1,0 +1,31 @@
+Description: CodeBuild source for UnitTests
+version: 0.2
+
+environment_variables:
+  plaintext:
+    "UNIT_TEST_NAME": "Unit Tests - Beginning"
+
+phases:
+  install:
+    commands:
+      - pip install boto3
+
+  pre_build:
+    commands:
+      - echo "Starting pre_build phase"
+      - echo $UNIT_TEST_NAME
+      
+      # Write unit test in separate python file that is included as an artifact
+      - python PythonFiles/Unit_Test-Enforce_S3_Encryption.py
+      - python PythonFiles/Unit_Test-AEP_S3_Check_for_Public_Buckets.py
+      - python PythonFiles/Unit_Test-Auto_Shutdown_Startup.py
+      - python PythonFiles/Unit_Test-KMS_Key_Rotation.py
+      - python PythonFiles/Unit_Test-Required_Tags_Responder.py
+  
+  build:
+    commands:
+      - echo "Starting build phase"
+
+  post_build:
+    commands:
+      - echo "Starting post_build phase"
