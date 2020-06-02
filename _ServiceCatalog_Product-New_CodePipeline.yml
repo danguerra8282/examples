@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Service Catalog template for Base CodePipeline
+ 
+Parameters:
+  pProductName:
+    Type: String
+    Description: "The desired Product Name.  All lowercase with no special characters."
+    Default: "example-team-codepipeline"
+    AllowedPattern: ^[0-9a-z-]*$
+  pGitHubRepoUrl:
+    Type: String
+    Description: "The Github repo URL"
+  pGitHubDeveloperToken:
+    Type: String
+    Description: "The Personal Access Token generated from Github repo"
+
+Resources:
+  rS3BucketSource:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties: 
+      # BucketEncryption: 
+      #   ServerSideEncryptionConfiguration: 
+      #   - ServerSideEncryptionByDefault:
+      #       SSEAlgorithm: 'aws:kms'
+      #       KMSMasterKeyID: 'aws/s3'
+      BucketName: !Sub "${pProductName}-source-bucket"
+      VersioningConfiguration:
+          Status: Enabled
+  
+  rS3BucketArtifacts:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties: 
+      # BucketEncryption: 
+      #   ServerSideEncryptionConfiguration: 
+      #   - ServerSideEncryptionByDefault:
+      #       SSEAlgorithm: 'aws:kms'
+      #       KMSMasterKeyID: 'aws/s3'
+      BucketName: !Sub "${pProductName}-artifact-store"
+      VersioningConfiguration:
+          Status: Enabled
+  
+  # Copy CodePipeline files to the new pipeline's s3 bucket
+  rCopyCodePipelineSource:
+    DependsOn:
+      - rS3BucketSource
+    Type: Custom::CopyCodePipelineSource
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:copy-codepipeline-files"
+      SourceBucket: !Sub "${pProductName}-source-bucket"
+  
+  # Deploy the CodePipeline files from the new pipeline's s3 bucket
+  rDeployCodePipelineSource:
+    DependsOn:
+      - rCopyCodePipelineSource
+    Type: Custom::DeployCodePipelineSource
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Deploy_CodePipeline_Source"
+      SourceBucket: !Sub "${pProductName}-source-bucket"
+      ProductName: !Sub ${pProductName}
+
+  # Push the CodePipeline files to the new pipeline's git repo
+  rPushCodePipelineSource:
+    DependsOn:
+      - rDeployCodePipelineSource
+    Type: Custom::PushCodePipelineSource
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Push_CodePipeline_Source"
+      SourceBucket: !Sub "${pProductName}-source-bucket"
+      ProductName: !Sub ${pProductName}
+      GitHubRepoUrl: !Sub "${pGitHubRepoUrl}"
+      GitHubDeveloperToken: !Sub "${pGitHubDeveloperToken}"
+
+  # Add the git repo's information to dynamo git_repo dynamoTable for continuous deployment
+  rUpdateGitReposDynamoTable:
+    DependsOn:
+    - rPushCodePipelineSource
+    Type: Custom::UpdateGitReposDynamoTable
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Update_GitRepos_DynamoTable"
+      GitHubRepoUrl: !Sub "${pGitHubRepoUrl}"
+      GitHubDeveloperToken: !Sub "${pGitHubDeveloperToken}"
+  
+# If the pipeline is included here then when the catalog provisioned product is deleted then the pipeline would be deleted
+  # rCodePipeline:
+  #   Type: AWS::CodePipeline::Pipeline
+  #   DependsOn: 
+  #     - rCopyCodePipelineSource
+  #   Properties:
+  #     Name: !Sub ${pProductName}-CodePipeline
+  #     ArtifactStore: 
+  #       Location: !Sub "${pProductName}-artifact-store"
+  #       Type: S3
+  #     RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/CloudLambda"
+  #     Stages:
+  #       - Name: Source
+  #         Actions:
+  #           - 
+  #             Name: Application_Source
+  #             ActionTypeId:
+  #               Category: Source
+  #               Owner: AWS
+  #               Provider: S3
+  #               Version: '1'
+  #             Configuration:
+  #               S3Bucket: !Sub "${pProductName}-source-bucket"
+  #               S3ObjectKey: !Sub 'deploy.zip'
+  #             OutputArtifacts:
+  #               - Name: Source
+  #             RunOrder: 1
+  #       - Name: Update_CodePipeline
+  #         Actions:
+  #           -
+  #             Name: Update_CodePipeline
+  #             ActionTypeId:
+  #               Category: Invoke
+  #               Owner: AWS
+  #               # Provider: Lambda
+  #               Provider: CloudFormation
+  #               Version: '1'
+  #             Configuration:
+  #               ActionMode: CREATE_UPDATE
+  #               Capabilities: CAPABILITY_NAMED_IAM
+  #               RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/CloudLambda
+  #               StackName: !Sub ${pProduct}-SecurityGroup-${pBusinessUnit}Dev
+  #               TemplateConfiguration: !Sub Source::iac/CloudFormation/SecurityGroup-${pBusinessUnit}Dev.json
+  #               TemplatePath: Source::iac/CloudFormation/SecurityGroup.yaml
+  #               OutputFileName: !Sub ${pBusinessUnit}DevSecurityGroupOutput.json
+  #             # Configuration:
+  #             #   FunctionName: Scan_Update_CodePipeline / multi-account-cloudformation
+  #             #   UserParameters: '{"cfn_template": "iac/CloudFormation/CodePipeline.yaml",
+  #             #   "cfn_parameter": "iac/CloudFormation/CodePipeline.json"}'
+  #             InputArtifacts:
+  #               - Name: Source
+  #             OutputArtifacts: []
+  #             RunOrder: 1
