@@ -52,7 +52,7 @@ def lambda_handler(event, context):
         # Copy pipeline.yaml to target bucket
         try:
             copy_source = {
-                'Bucket': 's304618-s3-test',
+                'Bucket': 'bucket_name',
                 'Key': key
             }
             s3_client.copy(copy_source, copy_destination, key)
