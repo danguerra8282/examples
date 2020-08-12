@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates SubnetGroup and an ElastiCache cluster in a single Availability Zone
+Parameters:
+  ClusterName:
+    Type: String
+    Description: The name for the ElastiCache Cluster
+    Default: ---REQUIRED INFORMATION---
+  EngineType:
+    Type: String
+    Description: The Engine Type to deploy
+    AllowedValues:
+      - memcached
+      - redis
+    Default: redis
+  CacheNodeType:
+    Type: String
+    Description: The compute and memory capacity of the nodes
+    AllowedValues:
+      - cache.m5.large
+      - cache.t3.medium
+      - cache.t2.medium
+      - cache.t2.small
+    Default: cache.t2.medium
+  NumberCacheNodes:
+    Type: Number
+    Description: The number of cache nodes
+    Default: 1
+  SecurityGroup:
+    Type: String
+    AllowedValues:
+      - InternalDatabaseSG
+      - InternalWebSG
+      - DefaultSG
+    Default: DefaultSG
+  ProductName:
+    Type: String
+    Description: Required Tag - ProductName for the resourse
+  Owner:
+    Type: String
+    Description: Required Tag - Owner for the resourse
+  Team:
+    Type: String
+    Description: Required Tag - Team the Owner resides on
+  BusinessUnit:
+    Type: String
+    Description: Required Tag - Business Unit the Team belongs to
+
+Resources:
+  rGetSecurityGroup:
+    Type: Custom::GetSecurityGroup
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Get_SecurityGroup"
+      SecurityGroup: !Ref SecurityGroup
+
+  rSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties: 
+      CacheSubnetGroupName: !Sub "${ClusterName}-subnet-group"
+      Description: !Sub "Subnet group for ${ClusterName}"
+      SubnetIds: 
+        - subnet-123 # Non-Prod_Private_2
+        - subnet-456 # Non-Prod_Private_6
+
+  rElastiCacheCluster:
+    DependsOn: rGetSecurityGroup
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      Engine: !Ref EngineType
+      CacheNodeType: !Ref CacheNodeType
+      NumCacheNodes: !Ref NumberCacheNodes
+      CacheSubnetGroupName: !Ref rSubnetGroup
+      VpcSecurityGroupIds:
+        - Fn::GetAtt: 
+          - rGetSecurityGroup
+          - security_group_found
+      Tags:
+        -
+          Key: "ProductName"
+          Value: !Ref ProductName
+        -
+          Key: "Owner"
+          Value: !Ref Owner
+        -
+          Key: "Team"
+          Value: !Ref Team
+        -
+          Key: "BusinessUnit"
+          Value: !Ref BusinessUnit
