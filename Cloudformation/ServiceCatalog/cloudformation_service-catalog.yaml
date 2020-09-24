@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Master Template for deploying Service Catalog - General Products 
+
+Parameters:
+  S3Bucket:
+    Type: String
+    Description: Location of s3 bucket templates for building infrastucture
+    Default: aep-cloudteam-templates
+
+Resources:
+  # This creates the portfolio
+  rGeneralPortfolio:
+    Type: AWS::ServiceCatalog::Portfolio
+    Properties: 
+      Description: Standard Products Portfolio
+      DisplayName: "General Products"
+      ProviderName: String
+      Tags: 
+      -
+        Key: "Owner"
+        Value: "aName"
+      -
+        Key: "BusinessUnit"
+        Value: IT
+      -
+        Key: "Team"
+        Value: "aTeam"
+      -
+        Key: "ProductName"
+        Value: Service_Catalog-General_Products
+
+  # This assigns Groups, Roles, and Users to consume the portfolio
+  rGeneralPortfolioPermissions:
+    Type: AWS::ServiceCatalog::PortfolioPrincipalAssociation
+    Properties: 
+      PortfolioId: !Ref rGeneralPortfolio
+      PrincipalARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/ServiceCatalog"     
+      PrincipalType: IAM
+
+  # These are the offerings to be available in the portfolio
+  rWindows2019:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      Parameters:
+        pPortfolioId: !Ref rGeneralPortfolio
+      TemplateURL:
+        Fn::Sub: "https://s3.amazonaws.com/${S3Bucket}/shared/service_catalog/ServiceCatalog_Offering-Simple_Windows_EC2.yml"
+      TimeoutInMinutes: 10
