@@ -1,0 +1,227 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates a standard EC2 instance
+ 
+Parameters:
+  pProductName:
+    Type: String
+    Description: "The desired Product Name (All lowercase with no special characters).  
+                  This will also be the name of the EC2 instance created"
+    Default: "my-application-x-server"
+    AllowedPattern: ^[0-9a-z-]*$
+  pOwner:
+    Type: String
+    Description: "The email address of who is responsible for the resource created"
+    Default: "my-email@place.com"
+  pTeam:
+    Type: String
+    Description: "The team that is responsible for the resource created"
+    Default: "ApplicationTeamX"
+  pBusinessUnit:
+    Type: String
+    Description: "The Business Unit the team reports to"
+  pInstanceType:
+    Type: String
+    Description: "The AWS EC2 type.  See the following links for more information.
+                  https://aws.amazon.com/ec2/instance-types/
+                  https://aws.amazon.com/ec2/pricing/on-demand/"
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+  pImageId:
+    Description: AMI ID that will be provisioned
+    Type: String
+    Default: ami-123
+  pSecurityGroup:
+    Description: List of Security Groups to add to EC2 instance
+    Type: AWS::EC2::SecurityGroup::Id
+  pSubnetId:
+    Description: Subnet for the EC2 instance to reside on.  If unknown, choose any!
+    Type: AWS::EC2::Subnet::Id
+  pAutoShutDown:
+    Description: If set then the instance will be automatically shutdown the specified time to ensure cost savings.
+                 Values are in 24-hour format.
+    Type: String
+    Default: 17
+    AllowedValues:
+      - false
+      - False
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+      - 14
+      - 15
+      - 16
+      - 17
+      - 18
+      - 19
+      - 20
+      - 21
+      - 22
+      - 23
+  pAutoStartup:
+    Description: If set then the instance will be automatically powered on the specified time.
+                 Values are in 24-hour format.
+    Type: String
+    Default: False
+    AllowedValues:
+      - false
+      - False
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+      - 14
+      - 15
+      - 16
+      - 17
+      - 18
+      - 19
+      - 20
+      - 21
+      - 22
+      - 23
+  pLocalAdministrators:
+    Type: String
+    Description: Comma seperated list of users to add as local administrators.  Only objects found in AD will be added.
+                 Leave this field blank if no local administrators are required.
+  pLocalPowerUsers:
+    Type: String
+    Description: Comma seperated list of users to add as Power Users.  Only objects found in AD will be added.
+                 Leave this field blank if no Power Users are required.
+
+Resources:
+  WindowsServer:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          config:
+          - Write_Windows-Starter
+          - Execute_Windows-Starter
+          - Signal_Success
+        Write_Windows-Starter:
+          files:
+            c:\cfn\scripts\windows-starter.ps1:
+              content:
+                Fn::Sub:
+                  copy-s3object -bucketname bucket_name -keyprefix InstanceBuilder -LocalFolder c:\aws_build
+        Execute_Windows-Starter:
+          commands:
+            WindowsServer:
+              command:
+                Fn::Sub:
+                  powershell.exe -command c:\cfn\scripts\windows-starter.ps1;
+                  powershell.exe -command c:\aws_build\_windows_build_wrapper.ps1
+              waitAfterCompletion: 'forever'
+        Signal_Success:
+          commands:
+            WindowsServer:
+              command:
+                Fn::Sub:
+                  cfn-signal -s true --stack ${AWS::StackName} --resource WindowsServer --region ${AWS::Region}
+
+    Properties:
+      Tags:
+      -
+        Key: "Name"
+        Value:
+          Ref: pProductName
+      # -
+      #   Key: "IamInstanceProfile"
+      #   Value:
+      #     Ref: pIamInstanceProfile
+      -
+        Key: "AutoShutDown"
+        Value:
+          Ref: pAutoShutDown
+      -
+        Key: "AutoStartup"
+        Value:
+          Ref: pAutoStartup
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "LocalAdministrators"
+        Value:
+          Ref: pLocalAdministrators
+      -
+        Key: "LocalPowerUsers"
+        Value:
+          Ref: pLocalPowerUsers
+      InstanceType:
+        Ref: pInstanceType
+      ImageId: !Ref pImageId
+      IamInstanceProfile: all_ssm # Do not remove as this is required for the build to complete successfully
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 50
+        - DeviceName: /dev/sdc
+          Ebs:
+            VolumeSize: 60
+            VolumeType: gp2
+            DeleteOnTermination: true
+            Encrypted: True
+      SecurityGroupIds:
+        - !Ref pSecurityGroup
+        # - !ImportValue aSecurityGroup
+      SubnetId: 
+        Ref: pSubnetId
+      # SubnetId: !ImportValue oPrivateSubnetA    # Address this since there probably is no output from creation
+      # KeyName:
+      #   Ref: pKeyPair
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - "<script>\n"
+            - 'cfn-init.exe -v -c config -s '
+            - Ref: AWS::StackId
+            - " -r WindowsServer"
+            - " --region "
+            - Ref: AWS::Region
+            - "\n"
+            - "</script>\n"
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT60M
