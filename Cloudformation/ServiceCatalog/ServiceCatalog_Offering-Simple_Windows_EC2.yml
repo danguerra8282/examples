@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates Service Catalog Offering
+Parameters:
+  pPortfolioId:
+    Description: The Portfolio ID for this product
+    Type: String
+
+Resources:
+  # This creates the policy that the role assumes to execute the product offering (assigned in the LaunchContraint)
+  rIamPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: Simple_Windows_2019-Launch_Policy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - 
+          Effect: "Allow"
+          Action:
+            - iam:PassRole
+            - iam:ListPolicies
+            - iam:GetRole
+            - iam:GetPolicy
+            - iam:ListRoles
+            - cloudformation:DescribeStackEvents
+            - cloudformation:UpdateStack
+            - cloudformation:SetStackPolicy
+            - cloudformation:GetTemplateSummary
+            - cloudformation:DescribeStacks
+            - cloudformation:CreateStack
+            - cloudformation:DeleteStack
+            - cloudformation:ValidateTemplate
+            - s3:GetObject
+            - sns:*
+            - ec2:*
+            - servicecatalog:*
+          Resource: "*"
+
+  # This creates the role that executes the product offering (assigned in the LaunchContraint)
+  rIamRole:
+    DependsOn: rIamPolicy
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "servicecatalog.amazonaws.com"
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Sub arn:aws:iam::${AWS::AccountId}:policy/policy_name
+      RoleName: Simple_Windows_2019-Launch_Role
+
+  # This is the cloudformation template that the offering will deploy
+  rSimpleWindows2019:
+    DependsOn: rIamRole
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Description: Deploys a simple Windows 2019 EC2 instance. End-users cannot modify the deployment process to include their application code.
+      Name: Simple_Windows_2019_EC2
+      Owner: aOwner
+      ProvisioningArtifactParameters:
+        - Info: {"LoadTemplateFromURL": "https://bucketName.s3.amazonaws.com/shared/service_catalog/ServiceCatalog_Product-Simple_Windows_EC2.yml"}
+      Tags: 
+      -
+        Key: "Owner"
+        Value: email@place.com
+      -
+        Key: "BusinessUnit"
+        Value: IT
+      -
+        Key: "Team"
+        Value: "aTeam"
+      -
+        Key: "ProductName"
+        Value: Simple_Windows_2019_EC2
+
+  # This assigns the product to the portfolio
+  rSimpleWindows2019Association:
+    DependsOn: rSimpleWindows2019
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties: 
+      PortfolioId: !Ref pPortfolioId
+      ProductId: !Ref rSimpleWindows2019
+
+  # This assigns the role that the product offering uses to launch the product
+  rLaunchConstraint:
+    DependsOn: rSimpleWindows2019Association
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    Properties:
+      Description: Assigns Simple_Windows_2019-Launch_Role role to execute the offering
+      LocalRoleName: Simple_Windows_2019-Launch_Role
+      PortfolioId: !Ref pPortfolioId
+      ProductId: !Ref rSimpleWindows2019
+
+Outputs:
+  ProductId:
+    Value: !Ref rSimpleWindows2019
+        
