@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cloudformation to create an ECS Cluster, Task Definition, ECS Service (Fargate), Load Balancer, and Route53 Alias
+
+# WARNING:
+# The Task Definition & the Load Balancer Subnets should be defined the same.  If not, you may get a container running on
+# an IP that is not included in the Load Balancer range.  This will result in failures in the Health Check and containers
+# being created and then destroyed a minute or two later.  The subnets in both sections (Load Balancer & Task Definition)
+# have been commented to help show this.
+
+Parameters:
+  pEcsClusterName:
+    Type: String
+    Description: Specifies the ECS Cluster Name
+    Default: test-cluster-00
+  pCpu:
+    Type: Number
+    Description: The number of CPU for the Task Definition
+    Default: 256
+  pMemory:
+    Type: Number
+    Description: The amount of Memory for the Task Definition
+    Default: 512
+  pDesiredCount:
+    Type: Number
+    Description: The number of task instances to run in the service
+    Default: 1
+  pRoute53Name:
+    Type: String
+    Description: The DNS Friendly Name to create for the application
+  pHostedZoneName:
+    Type: String
+    Description: The zone to assign the alias in (cloud.aep.com)
+    Default: sub.domain.com
+
+
+  # Tags
+  pOwner:
+    Description: The email of the owner for the s3 bucket
+    Type: String
+    Default: aName
+  pBusinessUnit:
+    Description: The Business Unit for the s3 bucket
+    Type: String
+    AllowedPattern: .*\S.*
+    Default: IT
+  pTeam:
+    Description: The team that is responsible for this resource
+    Type: String
+    AllowedPattern: .*\S.*
+    Default: aTeam
+  pProductName:
+    Type: String
+    AllowedPattern: .*\S.*
+    Default: test-cluster-00
+
+Resources:
+  # Task Definition (The Docker Image; what is to actual run on the container)
+  rTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions: 
+        - 
+          Name: "my-app"
+          Image: "amazon/amazon-ecs-sample"
+          Cpu: 256
+          PortMappings: 
+            - ContainerPort: 80
+          EntryPoint: 
+            - "/usr/sbin/apache2"
+            - "-D"
+            - "FOREGROUND"
+          Memory: 512
+          Essential: true
+      Cpu: !Ref pCpu
+      Memory: !Ref pMemory
+      ExecutionRoleArn: ecsTaskExecutionRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities: 
+        - FARGATE
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+  
+  # Get Security Group by name
+  rGetSecurityGroup:
+    Type: Custom::GetSecurityGroup
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Get_SecurityGroup"
+      SecurityGroup: aSecurityGroupName (logical-id)
+
+  # Load Balancer for the Service
+  rApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${pEcsClusterName}-LoadBalancer"
+      Scheme: internal
+      SecurityGroups: 
+        - Fn::GetAtt: 
+          - rGetSecurityGroup
+          - security_group_found
+      Subnets:
+        - subnet-0a # non-prod_private_3
+        - subnet-1b # non-prod_private_4
+        - subnet-2c # non-prod_private_5
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+
+  # Load Balancer Target Group that the ECS instances will be added to
+  rLoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${pEcsClusterName}-TargetGroup"
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: vpc-1234
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+  
+  # Associates the Target Group to the Load Balancer
+  rLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions: 
+        - Type: "forward"
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref rLoadBalancerTargetGroup
+                Weight: 1
+      LoadBalancerArn: !Ref rApplicationLoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+
+  # rHTTPSListener:
+  #   Type: 'AWS::ElasticLoadBalancingV2::Listener'
+  #   Properties:
+  #     DefaultActions:
+  #       - Type: "forward"
+  #         ForwardConfig:
+  #           TargetGroups:
+  #             - TargetGroupArn: !Ref rLoadBalancerTargetGroup
+  #               Weight: 1
+  #     LoadBalancerArn: !Ref rApplicationLoadBalancer
+  #     Certificates: 
+  #       - CertificateArn: arn:aws:acm:us-east-1:1234:certificate/abc-123
+  #     Port: '443'
+  #     Protocol: HTTPS
+  #     SslPolicy: ELBSecurityPolicy-2016-08
+
+  # ECS Cluster
+  rEcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties: 
+      ClusterName: !Ref pEcsClusterName
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+
+  # Service that runs and maintains the requested number of tasks and associated load balancers
+  rEcsService:
+    DependsOn: rLoadBalancerListener
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref rEcsCluster
+      LaunchType: FARGATE
+      DesiredCount: !Ref pDesiredCount
+      LoadBalancers: 
+      - TargetGroupArn:
+          Ref: rLoadBalancerTargetGroup
+        ContainerPort: 80
+        ContainerName: my-app
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups: 
+            - Fn::GetAtt: 
+              - rGetSecurityGroup
+              - security_group_found
+          Subnets:
+            - subnet-0a # non-prod_private_3
+            - subnet-1b # non-prod_private_4
+            - subnet-2c # non-prod_private_5
+      TaskDefinition: !Ref rTaskDefinition
+  
+  # Route53 (DNS) Friendly Name
+  rRoute53Alias:
+    DependsOn: rApplicationLoadBalancer
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub "${pRoute53Name}.${pHostedZoneName}"
+      ResourceRecords: 
+       - !GetAtt rApplicationLoadBalancer.DNSName
+      HostedZoneId: !ImportValue oHostedZoneId
+      Type: CNAME
+      TTL: '900'      
+
+Outputs:
+  oEcsCluster:
+    Description: The output of rEcsCluster
+    Value: !GetAtt rEcsCluster.Arn
+
+  oSecurityGroup:
+    Description: The Security Group returned
+    Value: !GetAtt rGetSecurityGroup.security_group_found
+
+  oApplicationLoadBalancer:
+    Description: The Load Balancer created
+    Value: !GetAtt rApplicationLoadBalancer.LoadBalancerFullName
+
+  oLoadBalancerTargetGroup:
+    Description: The Load Balancer Target Group created
+    Value: !GetAtt rLoadBalancerTargetGroup.TargetGroupFullName
+
+  oLoadBalancerListener:
+    Description: The Load Balancer Listener created
+    Value: !Ref rLoadBalancerListener
+
+  oEcsService:
+    Description: The ECS Service that was created
+    Value: !Ref rEcsService
+
+  oDnsName:
+    Description: The DNS Name of the Load Balancer
+    Value: !GetAtt rApplicationLoadBalancer.DNSName
