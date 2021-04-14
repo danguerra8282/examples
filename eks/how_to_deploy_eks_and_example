@@ -1,0 +1,202 @@
+Description:
+	This document describes how to deploy an EKS environment (EKS Cluster and NodeGroup) via command-line.  It also contains information and code about how to get inbound access into a container deployed in the cluster.
+
+This document does not contain information on using EKS Fargate.
+
+
+Notes:
+-	All commands must be executed with current and valid Federated AWS Credentials.  The _aws_federator script will provide an auto-expiring credential that will be valid for 1 hour.  It is possible that the federator script will need to be ran multiple times throughout the day while you are working with the EKS Cluster or with the Containers and Services.
+
+
+Prerequisites:
+-	Access to AWS Account
+-	AWS CLI installed (https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
+-	_aws_federator.py, _aws_federator.ps1, or _aws_federator.sh (for programmatic access)
+-	Bash Console
+
+
+Setup Programmatic Access:
+In bash console execute the following:
+Install HomeBrew (https://docs.aws.amazon.com/eks/latest/userguide/eksctl.html):
+-	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+
+Install WeaveWorks:
+-	brew tap weaveworks/tap
+
+Install kubectl (https://kubernetes.io/docs/tasks/tools/):
+-	brew install kubectl
+
+Install eksctl:
+-	brew install weaveworks/tap/eksctl
+
+Test Installation:
+-	eksctl version
+
+
+Deploy an EKS Cluster:
+1.	Create a cluster.yml that contains the cluster definition
+•	Create a file named cluster.yml
+•	Paste the following in cluster.yml (formatting matters)
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: basic-cluster
+  region: us-east-1
+
+vpc:
+  subnets:
+    private:
+      us-east-1a: { id: subnet-1234 }
+      us-east-1b: { id: subnet-asdf }
+
+•	Change “name: basic-cluster” to a unique name of your choice.  There should not be duplicates
+•	Update the subnet IDs with subnets from the account you are working in
+
+2.	Execute the following command in your bash console
+•	Create Cluster:
+eksctl create cluster -f cluster.yml --profile aws-profile-01 
+
+(where profile is the AWS Account you are working in).  
+This will take some time to complete (~10 minutes); be patient.
+•	Delete Cluster:
+eksctl delete cluster -f cluster.yml --profile aws-profile-01
+
+
+Deploy Node Group:
+1.	Create nodegroup.yml that contains the NodeGroup definition
+•	Create a file named nodegroup.yml
+•	Paste the following in nodegroup.yml (formatting matters)
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: basic-cluster
+  region: us-east-1
+  tags: { Owner: yourEmail@domain.com, Team: yourTeam, ProductName: basic-cluster, BusinessUnit: yourBU }
+
+vpc:
+  id: "vpc-qwer"
+  subnets:
+    private:
+      us-east-1a:
+          id: "subnet-1234"
+      us-east-1b:
+          id: "subnet-asdf"
+  sharedNodeSecurityGroup: "sg-zxcv"
+  securityGroup: "sg-zcxv"
+
+managedNodeGroups:
+  - name: basic-cluster
+    labels: { role: workers }
+    instanceType: t3.large
+    desiredCapacity: 2
+    volumeSize: 100
+    privateNetworking: true
+    tags: {Owner: yourEmail@domain.com, Team: yourTeam, ProductName: basic-cluster, BusinessUnit: yourBU}
+    #ssh:
+    #  publicKeyPath: ~/.ssh/id_krypton.pub
+    #  sourceSecurityGroupIds: [sg-zxcv]
+    iam:
+      instanceRoleARN: arn:aws:iam::accountId:role/_eks_role
+    securityGroups: 
+      attachIDs: [sg-zxcv]
+
+•	Update the value for “name” in the metadata & managedNodeGroups sections to match the name defined for your cluster in your cluster.yml
+•	Update the values for the tags in the metadata & managedNodeGroups sections
+•	Update the value for iam/instanceRoleARN to the AWS Account you are working in
+•	Update the value for securityGroups/attachIDs to an appropriate Security Group in the AWS account you are working in
+•	Update the VPC & SubnetIDs to appropriate values for the AWS Account you are working in
+•	The SSH section can be uncommented and a ssh key added if access to the EKS EC2 nodes is required
+
+2.	Execute the following command in your bash console
+•	Create NodeGroup:
+eksctl create nodegroup --config-file=nodegroup.yml --profile aws-profile-01
+
+(where profile is the AWS Account you are working in).  
+This will take some time to complete (~5 minutes); be patient.
+
+•	Delete NodeGroup:
+eksctl delete nodegroup --config-file=nodegroup.yml --approve --profile aws-profile-01
+
+
+Deploy Sample App into Your Cluster:
+From your Bash console:
+1.	Update your KubeConfig file:
+aws eks --region us-east-1 update-kubeconfig --name basic-cluster --profile aws-profile-01
+
+(where --name is the cluster you created and --profile is the AWS Account you are working in)
+	
+2.	Create Network Load Balancer for ingress traffic
+•	Create a file named nlb.yml
+•	Paste the following into nlb.yml (formatting matters)
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nlb
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    #service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    kubernetes.io/ingress.class: alb
+spec:
+  ports:
+    #- port: 80
+    #  targetPort: 80
+    #  protocol: TCP
+    - port: 443
+      targetPort: 80
+      protocol: TCP
+  type: LoadBalancer
+  selector:
+    app: nginx
+  loadBalancerSourceRanges:
+    - "10.xx.0.0/16"
+    - "10.xx.0.0/16"
+    - "10.xx.0.0/16"
+    - "10.xx.0.0/16"
+    - "10.xx.0.0/16"
+
+3.	Deploy the Network Load Balancer
+kubectl apply -f nlb.yml
+
+4.	View Network Load Balancer
+kubectl get service/nlb
+
+The output will contain an EXTERNAL-IP which can be used to access deployments under the load balancer. 
+
+5.	Create an Application
+•	Create a file named sample-deployment.yml
+•	Paste the following into sample-deployment.yml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: public.ecr.aws/nginx/nginx:1.19.6
+          ports:
+            - name: http
+              containerPort: 80
+
+6.	Deploy the Application
+kubectl apply -f sample-deployment.yml
+
+7.	View the Application
+kubectl get deployment/sample-app
+
+(This will return the current state of the app.  It will take a few minutes for it to be completely READY)
+
