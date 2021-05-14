@@ -52,9 +52,8 @@ def main():
     # print(f'{s.text}')
     t = session.post(F5_APM_PAGE_RES_PAGE, cookies=session.cookies, data=form)
     # print(f'{t.text}')
-    saml_assertion = str(t.text).split('<input type="hidden" name="SAMLResponse"')
-    saml_assertion = saml_assertion[1].split('="')
-    saml_assertion = saml_assertion[1].split('"/>')
+    saml_assertion = str(t.text).split(' <input type="hidden" name="SAMLResponse" value="')
+    saml_assertion = saml_assertion[1].split('"/><noscript>')
     saml_assertion = saml_assertion[0]
     # print(f'saml_assertion: {saml_assertion}')
 
