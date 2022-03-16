@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates Service Catalog Offering
+Parameters:
+  pPortfolioId:
+    Description: The Portfolio ID for this product
+    Type: String
+
+Resources:
+  # This creates the policy that the role assumes to execute the product offering (assigned in the LaunchContraint)
+  rIamPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: ECS_Codebuild-Launch_Policy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - 
+          Effect: "Allow"
+          Action:
+            - iam:PassRole
+            - iam:ListPolicies
+            - iam:GetRole
+            - iam:GetPolicy
+            - iam:ListRoles
+            - iam:CreateRole
+            - cloudformation:DescribeStackEvents
+            - cloudformation:UpdateStack
+            - cloudformation:SetStackPolicy
+            - cloudformation:GetTemplateSummary
+            - cloudformation:DescribeStacks
+            - cloudformation:CreateStack
+            - cloudformation:DeleteStack
+            - cloudformation:ValidateTemplate
+            - s3:GetObject
+            - sns:*
+            - ec2:*
+            - servicecatalog:*
+          Resource: "*"
+
+  # This creates the role that executes the product offering (assigned in the LaunchContraint)
+  rIamRole:
+    DependsOn: rIamPolicy
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "servicecatalog.amazonaws.com"
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Sub arn:aws:iam::${AWS::AccountId}:policy/developer_role_policy
+      RoleName: ECS_Codebuild-Launch_Role
+
+  # This is the cloudformation template that the offering will deploy
+  rEcsCodebuild:
+    DependsOn: rIamRole
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      Description: Deploys an ECS (Fargate) Container environment and a Codebuild job to control the Container image creation and deployment. End-users cannot modify the deployment process to include their application code.
+      Name: ECS_Codebuild
+      Owner: Cloud_Transformation
+      ProvisioningArtifactParameters:
+        - Info: {"LoadTemplateFromURL": "https://_location_.s3.amazonaws.com/folder/service_catalog/ServiceCatalog_Product-ecs_codebuild_environment.yml"}
+      Tags: 
+      -
+        Key: "Owner"
+        Value: default
+      -
+        Key: "BusinessUnit"
+        Value: IT
+      -
+        Key: "Team"
+        Value: default
+      -
+        Key: "ProductName"
+        Value: ECS_Codebuild
+
+  # This assigns the product to the portfolio
+  rEcsCodebuildAssociation:
+    DependsOn: rEcsCodebuild
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties: 
+      PortfolioId: !Ref pPortfolioId
+      ProductId: !Ref rEcsCodebuild
+
+  # This assigns the role that the product offering uses to launch the product
+  rLaunchConstraint:
+    DependsOn: rEcsCodebuildAssociation
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    Properties:
+      Description: Assigns ECS_Codebuild-Launch_Role role to execute the offering
+      LocalRoleName: ECS_Codebuild-Launch_Role
+      PortfolioId: !Ref pPortfolioId
+      ProductId: !Ref rEcsCodebuild
+
+Outputs:
+  ProductId:
+    Value: !Ref rEcsCodebuild
+        
