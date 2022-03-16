@@ -1,0 +1,957 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cloudformation to create an ECS Cluster, Task Definition, ECS Service (Fargate), Load Balancer, and Route53 Alias
+
+# WARNING:
+# The Task Definition & the Load Balancer Subnets should be defined the same.  If not, you may get a container running on
+# an IP that is not included in the Load Balancer range.  This will result in failures in the Health Check and containers
+# being created and then destroyed a minute or two later.  The subnets in both sections (Load Balancer & Task Definition)
+# have been commented to help show this.
+
+Parameters:
+  pAppName:
+    Type: String
+    Description: Specifies the App Name
+    Default: "ecs-codebuild-environment"
+    AllowedPattern: (?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*
+  pContainerPort:
+    Type: Number
+    Description: The port the container will listen on
+  pCpu:
+    Type: Number
+    Description: The number of CPU for the Task Definition
+    Default: 512
+  pMemory:
+    Type: Number
+    Description: The amount of Memory for the Task Definition
+    Default: 1024
+  pDesiredCount:
+    Type: Number
+    Description: "The number of task instances to run in the service.  Defaults to 0 (zero) so the Service Offering can complete without needing the
+                 CodeBuild environment to execute.  Executing your CodeBuild job will result in the number of containers to be 1"
+    Default: 0
+  pClusterCpu:
+    Type: Number
+    Description: The number of CPU for the ECS Cluster
+    Default: 512
+  pClusterMemory:
+    Type: Number
+    Description: The amount of Memory for the ECS Cluster
+    Default: 1024
+  pRoute53Name:
+    Type: String
+    Description: The DNS Friendly Name to create for the application.  Please only include the desired prefix as this will be combined with the pHostedZoneName.
+  pHostedZoneName:
+    Type: String
+    Description: The zone to assign the alias in (zone.name.com)
+    Default: zone.name.com
+  pCertificateArn:
+    Type: String
+    Description: "The AWS Certificate ARN if it was previously created.  This is used for modifying Certificates that were already imported.  
+    This value should be left blank if you are importing a certificate for the first time.  This value will be provided back to you once 
+    the Certificate has been imported the first time."
+  pCertificateBody:
+    Type: String
+    Description: The Certificate Body.  This will be the "your_website_name".domain.com-cert.pem file.  Include all contents of the file. 
+    NoEcho: true
+  pCertificateChain:
+    Type: String
+    Description: The Certificate Chain.  This will be either the cacert.pem or the entrust_intermediate_l1k.pem file.  Include all contents of the file.
+    NoEcho: true
+  pPrivateKey:
+    Type: String
+    Description: The Private Key.  This will be the "your_website_name".domain.com-key.pem file.  Include all contents of the file.
+    NoEcho: true
+  pDeveloperToken:
+    Type: String
+    Description: The Github Developer Token to be used for cloning your git repo.  This is used to automate the container image creation.
+    NoEcho: true
+  pGitRepoName:
+    Type: String
+    Description: The name of your Github Repo.  Just the repo name; do not include https://github.domain.com/ORG/.
+
+  # Tags
+  pOwner:
+    Description: The email of the owner for the s3 bucket
+    Type: String
+    Default: default
+  pBusinessUnit:
+    Description: The Business Unit for the s3 bucket
+    Type: String
+    AllowedPattern: .*\S.*
+    Default: IT
+  pTeam:
+    Description: The team that is responsible for this resource
+    Type: String
+    AllowedPattern: .*\S.*
+    Default: default
+  pProductName:
+    Type: String
+    AllowedPattern: .*\S.*
+    Default: ecs-codebuild-environment
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - 
+        Label: 
+          default: Container_Properties
+        Parameters:
+          - pAppName
+          - pContainerPort
+          - pCpu
+          - pMemory
+          - pDesiredCount
+          - pClusterCpu
+          - pClusterMemory
+          - pRoute53Name
+          - pHostedZoneName
+      - 
+        Label:
+          default: GitHub_Information
+        Parameters:
+          - pGitRepoName
+          - pDeveloperToken
+      -
+        Label:
+          default: Certificate_Information
+        Parameters:
+          - pCertificateArn
+          - pCertificateBody
+          - pPrivateKey
+          - pCertificateChain
+      - 
+        Label: 
+          default: Tags
+        Parameters:
+          - pProductName
+          - pOwner
+          - pBusinessUnit
+          - pTeam
+
+    ParameterLabels:
+      pAppName:
+        default: "Application Name"
+      pContainerPort:
+        default: "Container Port"
+      pCpu:
+        default: "Container CPU"
+      pMemory:
+        default: "Container Memory"
+      pDesiredCount:
+        default: "Number of Containers to Run"
+      pClusterCpu:
+        default: "Cluster CPU"
+      pClusterMemory:
+        default: "Cluster Memory"
+      pRoute53Name:
+        default: "DNS Name"
+      pHostedZoneName:
+        default: "Hosted Zone Domain"
+
+      pGitRepoName:
+        default: "Github Repository Name"
+      pDeveloperToken:
+        default: "Github Developer Token"
+
+      pCertificateArn:
+        default: "Previously imported Certificate Arn; if applicable"
+      pCertificateBody:
+        default: "Certificate Body"
+      pPrivateKey:
+        default: "Private Key"
+      pCertificateChain:
+        default: "Certificate Chain"
+
+      # Tags:
+      pProductName:
+        default: "Product Name"
+      pOwner:
+        default: "Owner"
+      pBusinessUnit:
+        default: "Business Unit"
+      pTeam:
+        default: "Team"
+
+Resources:
+  # Get VPC Info
+  rGetVpcInfo:
+    Type: Custom::GetVPCSubnets
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Get_BU_VPC_Subnets"
+
+  rCustomResource:  
+    Type: Custom::ImportCert
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Import_Cert"
+      CertificateArn: !Ref pCertificateArn
+      CertificateBody: !Ref pCertificateBody
+      PrivateKey: !Ref pPrivateKey
+      CertificateChain: !Ref pCertificateChain
+      ProductName: !Ref pProductName
+      Owner: !Ref pOwner
+      BusinessUnit: !Ref pBusinessUnit
+      Team: !Ref pTeam
+
+  #########################################################
+  ###################### ECS CONFIGS ######################
+  #########################################################
+  # Get VPCE Security Group
+  rGetSecurityGroup:
+    DependsOn: rGetVpcInfo
+    Type: Custom::GetSecurityGroup
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Get_VPC_Endpoint"
+      ResourceProperties: ecs
+  
+  # Security Group for the ECS Service
+  rSecurityGroupECS:
+    DependsOn: rGetSecurityGroup
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from within internal network.
+      VpcId: !Sub "${rGetVpcInfo.vpc_found}"
+      # Inbound definition
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 10.0.0.0/8
+        Description: Inbound HTTP to ECS
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 10.0.0.0/8
+        Description: Inbound HTTPS to ECS
+      - IpProtocol: tcp
+        FromPort: !Ref pContainerPort
+        ToPort: !Ref pContainerPort
+        CidrIp: 10.0.0.0/8
+        Description: Inbound Container Port to ECS
+      # Outbound definition
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        DestinationSecurityGroupId: !GetAtt rGetSecurityGroup.vpce_security_group 
+        Description: Outbound to ECS VPC Endpoint
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0 
+        Description: Outbound 443 to Docker
+      Tags: 
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+  
+  # Security Group for the ALB Service
+  rSecurityGroupALB:
+    DependsOn: rSecurityGroupECS
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from within internal network.
+      VpcId: !Sub "${rGetVpcInfo.vpc_found}"
+      # Inbound definition
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 10.0.0.0/8
+        Description: Inbound HTTP to ALB
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 10.0.0.0/8
+        Description: Inbound HTTPS to ALB
+      # Outbound definition
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        DestinationSecurityGroupId: !Ref rSecurityGroupECS
+        Description: Outbound to ECS VPC Endpoint
+      - IpProtocol: tcp
+        FromPort: !Ref pContainerPort
+        ToPort: !Ref pContainerPort
+        CidrIp: 10.0.0.0/8
+        Description: Outbound to ECS Security Group
+      Tags: 
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+
+  # The ECR repo to create
+  rEcrRepo:
+    Type: AWS::ECR::Repository
+    Properties: 
+      EncryptionConfiguration: 
+        EncryptionType: KMS
+      ImageScanningConfiguration: 
+        ScanOnPush: True
+      RepositoryName: !Ref pAppName
+      Tags: 
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+
+  # Define logging location
+  rECSLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${pAppName}-container-LG"
+      RetentionInDays: 7
+
+  # Task Definition (The Docker Image; what is to actual run on the container)
+  rTaskDefinition:
+    DependsOn: 
+      - rECSLogGroup
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions: 
+        - 
+          Name: !Ref pAppName
+          Image: !GetAtt rEcrRepo.RepositoryUri
+          Cpu: !Ref pCpu
+          Memory: !Ref pMemory
+          PortMappings: 
+            - ContainerPort: !Ref pContainerPort
+          Essential: true
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Sub "/ecs/${pAppName}-container-LG"
+              awslogs-region: !Sub ${AWS::Region}
+              awslogs-stream-prefix: !Sub ${pAppName}
+      TaskRoleArn: ecsTaskExecutionRole
+      Cpu: !Ref pClusterCpu
+      Memory: !Ref pClusterMemory
+      ExecutionRoleArn: ecsTaskExecutionRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities: 
+        - FARGATE
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+
+  # Load Balancer for the Service
+  rApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${pAppName}-ALB"
+      Scheme: internal
+      SecurityGroups: 
+        - !Ref rSecurityGroupALB
+      Subnets:
+        - Fn::Select:
+          - 0
+          - Fn::Split:
+            - '|'
+            - !Sub "${rGetVpcInfo.subnets_found}"
+        - Fn::Select:
+          - 1
+          - Fn::Split:
+            - '|'
+            - !Sub "${rGetVpcInfo.subnets_found}"
+        - Fn::Select:
+          - 2
+          - Fn::Split:
+            - '|'
+            - !Sub "${rGetVpcInfo.subnets_found}"
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+
+  # Load Balancer Target Group that the ECS instances will be added to
+  rLoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${pAppName}-TG"
+      HealthCheckIntervalSeconds: 60
+      # HealthCheckPath: /home
+      HealthCheckPath: /
+      # HealthCheckPort: 8443
+      HealthCheckPort: !Ref pContainerPort
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 30
+      HealthyThresholdCount: 10
+      Port: !Ref pContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Sub "${rGetVpcInfo.vpc_found}"
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+  
+  # Associates the Target Group to the Load Balancer
+  # rLoadBalancerListener:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     DefaultActions: 
+  #       - Type: "forward"
+  #         ForwardConfig:
+  #           TargetGroups:
+  #             - TargetGroupArn: !Ref rLoadBalancerTargetGroup
+  #               Weight: 1
+  #     LoadBalancerArn: !Ref rApplicationLoadBalancer
+  #     Port: 80
+  #     Protocol: "HTTP"
+
+  rHTTPSListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: "forward"
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref rLoadBalancerTargetGroup
+                Weight: 1
+      LoadBalancerArn: !Ref rApplicationLoadBalancer
+      Certificates: 
+        - CertificateArn: !Sub "${rCustomResource.cert_arn}"
+      Port: '443'
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-2016-08
+
+  # ECS Cluster
+  rEcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties: 
+      ClusterName: !Ref pAppName
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam
+
+  # Service that runs and maintains the requested number of tasks and associated load balancers
+  rEcsService:
+    # DependsOn: rLoadBalancerListener
+    DependsOn: rHTTPSListener
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref rEcsCluster
+      LaunchType: FARGATE
+      DesiredCount: !Ref pDesiredCount
+      PropagateTags: SERVICE
+      LoadBalancers: 
+      - TargetGroupArn:
+          Ref: rLoadBalancerTargetGroup
+        # ContainerPort: 8443
+        ContainerPort: !Ref pContainerPort
+        ContainerName: !Ref pAppName
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups: 
+            - !Ref rSecurityGroupECS
+          Subnets:
+            - Fn::Select:
+              - 0
+              - Fn::Split:
+                - '|'
+                - !Sub "${rGetVpcInfo.subnets_found}"
+            - Fn::Select:
+              - 1
+              - Fn::Split:
+                - '|'
+                - !Sub "${rGetVpcInfo.subnets_found}"
+            - Fn::Select:
+              - 2
+              - Fn::Split:
+                - '|'
+                - !Sub "${rGetVpcInfo.subnets_found}"
+      TaskDefinition: !Ref rTaskDefinition
+      Tags:
+      -
+        Key: "ProductName"
+        Value:
+          Ref: pProductName
+      -
+        Key: "Owner"
+        Value:
+          Ref: pOwner
+      -
+        Key: "BusinessUnit"
+        Value:
+          Ref: pBusinessUnit
+      -
+        Key: "Team"
+        Value:
+          Ref: pTeam    
+  
+  # Route53 (DNS) Friendly Name
+  rRoute53Alias:
+    DependsOn: rApplicationLoadBalancer
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub "${pRoute53Name}.${pHostedZoneName}"
+      ResourceRecords: 
+       - !GetAtt rApplicationLoadBalancer.DNSName
+      HostedZoneId: !ImportValue oHostedZoneId
+      Type: CNAME
+      TTL: '60'
+  
+
+  ###############################################################
+  ###################### CODEBUILD CONFIGS ######################
+  ###############################################################
+  rSecretsManagerEntry:
+    Type: AWS::SecretsManager::Secret
+    Properties: 
+      Description: !Ref pAppName
+      Name: !Ref pAppName
+      SecretString: !Ref pDeveloperToken
+      Tags: 
+        -
+          Key: "ProductName"
+          Value: !Ref pProductName
+        -
+          Key: "Owner"
+          Value: !Ref pOwner
+        -
+          Key: "BusinessUnit"
+          Value: !Ref pBusinessUnit
+        -
+          Key: "Team"
+          Value: !Ref pTeam
+
+  rIamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      # RoleName: !Sub "${pProjectName}-CodeBuild-IamRole"
+      RoleName: !Sub "${pAppName}-CodeBuild-IamRole"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "codebuild.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      # ManagedPolicyArns:
+      #   - arn:aws:iam::aws:policy/AdministratorAccess
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/CloudBoundary"
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: !Sub "${pAppName}-CodeBuild-IamRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - ecr:CreateRepository
+                  - ecr:DescribeImages
+                  - ecr:DescribeRegistry
+                  - ecr:DescribeRepositories
+                  - ecr:GetAuthorizationToken
+                  - ecr:ListTagsForResource
+                  - ecr:PutImage
+                  - ecr:PutImageScanningConfiguration
+                  - ecr:PutImageTagMutability
+                  - ecr:StartImageScan
+                  - ecr:TagResource
+                  - ecr:UntagResource
+                  - ecr:ListImages
+                  - ecs:CreateCluster
+                  - ecs:CreateService
+                  - ecs:DescribeClusters
+                  - ecs:DescribeContainerInstances
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                  - ecs:DescribeTasks
+                  - ecs:ListClusters
+                  - ecs:ListContainerInstances
+                  - ecs:ListServices
+                  - ecs:ListTagsForResource
+                  - ecs:ListTaskDefinitions
+                  - ecs:ListTasks
+                  - ecs:RegisterTaskDefinition
+                  - ecs:RunTask
+                  - ecs:StartTask
+                  - ecs:StopTask
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                  - ecs:UpdateService
+                  - ec2:AttachNetworkInterface
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeDhcpOptions
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeVpcs
+                  - ec2:DeleteNetworkInterface
+                  - ec2:Describe* # <--- INVESTIGATE
+                  - ec2:Create* # <--- INVESTIGATE
+                  - s3:GetObject
+                  - ecr:* # <--- INVESTIGATE
+                  - iam:PassRole
+                  - secretsmanager:ListSecrets
+                  - secretsmanager:GetRandomPassword
+                Resource: "*"
+              - 
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                Resource: 
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+              -
+                Effect: "Allow"
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Ref rSecretsManagerEntry
+
+  rIamProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - 
+          Ref: "rIamRole"
+
+  rSecurityGroupCodeBuild:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from within internal network.
+      VpcId: !Sub "${rGetVpcInfo.vpc_found}"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 10.0.0.0/8
+        Description: Inbound HTTPS to Public Subnet A
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        DestinationPrefixListId: pl-number
+        Description: Outbound HTTPS to S3 Prefix List
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        DestinationSecurityGroupId: !GetAtt rGetSecurityGroup.vpce_security_group
+        Description: Outbound * to ECS Endpoint SG
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+        Description: 443 Outbound to All
+      - IpProtocol: tcp
+        FromPort: 0
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+        Description: All Outbound to All # Work on this so that it is not so permissive
+      Tags:
+        -
+          Key: "Name"
+          Value: !Ref pAppName
+        -
+          Key: "ProductName"
+          Value: !Ref pProductName
+        -
+          Key: "Owner"
+          Value: !Ref pOwner
+        -
+          Key: "BusinessUnit"
+          Value: !Ref pBusinessUnit
+        -
+          Key: "Team"
+          Value: !Ref pTeam
+        -
+          Key: "Exempt"
+          Value: "True"
+
+  rS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties: 
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'AES256'
+      BucketName: !Sub "${pAppName}-s3-bucket"
+      VersioningConfiguration:
+          Status: Enabled
+      Tags:
+        - Key: "ProductName"
+          Value: !Ref pProductName
+        - Key: "Owner"
+          Value: !Ref pOwner
+        - Key: "BusinessUnit"
+          Value: !Ref pBusinessUnit
+        - Key: "Team"
+          Value: !Ref pTeam
+        - Key: "Backup"
+          Value: False
+  
+  rBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: rS3Bucket
+    Properties:
+      Bucket: !Ref rS3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: !Sub ${rS3Bucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: AccessToBucketd
+            Action:
+              - s3:*
+            Effect: Allow
+            Resource:
+              -  !Sub ${rS3Bucket.Arn}
+              -  !Sub ${rS3Bucket.Arn}/*
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+          - Sid: BlockOutsidePolicyEdits
+            Effect: Deny
+            Principal: "*"
+            Action:
+            - s3:DeleteBucketPolicy
+            - s3:PutBucketAcl
+            - s3:PutBucketPolicy
+            - s3:PutEncryptionConfiguration
+            Resource: !Sub ${rS3Bucket.Arn}
+            Condition:
+              StringNotEquals:
+                aws:PrincipalOrgID: %_orgId_%
+
+  rCodeBuildProject:
+    DependsOn: rS3Bucket
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: !Ref pAppName
+      ServiceRole: !Ref rIamRole
+      Artifacts:
+        Type: no_artifacts
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+        PrivilegedMode: True
+      Source:
+        Type: S3
+        Location: !Sub "${rS3Bucket}/Source.zip"
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref rSecurityGroupCodeBuild
+        Subnets:
+          - Fn::Select:
+            - 0
+            - Fn::Split:
+              - '|'
+              - !Sub "${rGetVpcInfo.subnets_found}"
+          - Fn::Select:
+            - 1
+            - Fn::Split:
+              - '|'
+              - !Sub "${rGetVpcInfo.subnets_found}"
+          - Fn::Select:
+            - 2
+            - Fn::Split:
+              - '|'
+              - !Sub "${rGetVpcInfo.subnets_found}"
+        VpcId: !Sub "${rGetVpcInfo.vpc_found}"
+      TimeoutInMinutes: 60
+  
+  ###############################################################
+  ###################### CODEBUILD CONFIGS ######################
+  ###############################################################
+  rCopyCodeBuildCode:
+    # DependsOn: rS3Bucket
+    DependsOn: rCodeBuildProject
+    Type: Custom::CopyCodeBuildCode
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Copy_Code_Build_Code"
+      DestinationBucket: !Ref rS3Bucket
+      GithubRepoName: !Ref pGitRepoName
+      DeveloperToken: !Ref pAppName
+      AccountId: !Sub "${AWS::AccountId}"
+      EcsCodeBuildEnvironment: !Ref pAppName
+      EcrRepo: !Ref pAppName
+      TaskDefinition: !Ref rTaskDefinition
+
+
+Outputs:
+  oRoute53Address:
+    Description: The DNS given to your environment
+    Value: !Ref rRoute53Alias
+
+  oCertArn: 
+    Description: The ARN of the certificate imported.  May be used for future reference.
+    Value: !Sub "${rCustomResource.cert_arn}"
+
+  oEcrRepo:
+    Description: The output of rEcrRepo
+    Value: !GetAtt rEcrRepo.RepositoryUri
+
+  oECSLogGroup:
+    Description: The output of rECSLogGroup
+    Value: !Ref rECSLogGroup
+
+  oGetSecurityGroup:
+    Description: The Security Group returned
+    Value: !GetAtt rGetSecurityGroup.vpce_security_group
+  
+  oSecurityGroupECS:
+    Description: ECS Security Group
+    Value: !Ref rSecurityGroupECS
+
+  oSecurityGroupALB:
+    Description: ALB Security Group
+    Value: !Ref rSecurityGroupALB
+
+  oApplicationLoadBalancer:
+    Description: The Load Balancer created
+    Value: !GetAtt rApplicationLoadBalancer.LoadBalancerFullName
+
+  oLoadBalancerTargetGroup:
+    Description: The Load Balancer Target Group created
+    Value: !GetAtt rLoadBalancerTargetGroup.TargetGroupFullName
+  
+  # oCertificate:
+  #   Description: The Certificate ARN imported
+  #   Value: !Ref rCertificate
+
+  oLoadBalancerListener:
+    Description: The Load Balancer Listener created
+    Value: !Ref rHTTPSListener
+  
+  oEcsCluster:
+      Description: The output of rEcsCluster
+      Value: !GetAtt rEcsCluster.Arn
+  
+  oEcsService:
+    Description: The ECS Service that was created
+    Value: !Ref rEcsService
+
+  oDnsName:
+    Description: The DNS Name of the Load Balancer
+    Value: !GetAtt rApplicationLoadBalancer.DNSName
+
+  oSecurityGroupCodeBuild:
+    Description: ECS Security Group
+    Value: !Ref rSecurityGroupCodeBuild
+
+  oIamRole:
+    Description: The IAM Role for Codebuild Project
+    Value: !Ref rIamRole
+
+  oCodeBuildProject:
+    Description: The CodeBuild Project that builds the ECS Container Image
+    Value: !Ref rCodeBuildProject
+
+  oS3Bucket:
+    Description: The S3 bucket that contains the CodeBuild Source
+    Value: !Ref rS3Bucket
