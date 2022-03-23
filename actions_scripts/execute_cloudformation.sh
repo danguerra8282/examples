@@ -5,7 +5,7 @@
 # CONST
 ProductName="Product_Name"
 Team="Team_Name"
-Owner="team_email@aep.com"
+Owner="email@place.com"
 BusinessUnit="Your_Business_Unit"
 
 # Functions
