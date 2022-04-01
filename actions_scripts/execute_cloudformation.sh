@@ -15,13 +15,18 @@ wait_for_stack_completion () {
 
   COMPLETE=false
   while [ "$COMPLETE" == "false" ]
-  do 
+  
+  do
     result=$(/usr/local/bin/aws cloudformation describe-stacks --stack-name $stack_name --region $region)
-    state=$(echo $result | jq -r '.Stacks | .[0] | .StackStatus')
-    echo "state: $state"
-    if [[ $state == "UPDATE_COMPLETE" ]] || [[ $state == "CREATE_COMPLETE" ]]; then
+    echo "result: $result"
+    if [[ "$result" == *'"StackStatus": "CREATE_COMPLETE"'* ]]; then
       COMPLETE=true
-    elif [[ $state == "CREATE_FAILED" ]] || [[ $state == "ROLLBACK_COMPLETE" ]]; then
+    elif [[ "$result" == *'"StackStatus": "UPDATE_COMPLETE"'* ]]; then
+      COMPLETE=true
+    elif [[ "$result" == *'"StackStatus": "CREATE_FAILED"'* ]]; then
+      echo "Cloudformation $stack_name failed with: $state"
+      exit 1
+    elif [[ "$result" == *'"StackStatus": "ROLLBACK_COMPLETE"'* ]]; then
       echo "Cloudformation $stack_name failed with: $state"
       exit 1
     else
@@ -29,6 +34,23 @@ wait_for_stack_completion () {
       sleep 10
     fi
   done
+  
+  # JQ isn't currently available on runners?
+#   do 
+#     result=$(/usr/local/bin/aws cloudformation describe-stacks --stack-name $stack_name --region $region)
+#     echo "result: $result"
+#     state=$(echo $result | jq -r '.Stacks | .[0] | .StackStatus')
+#     echo "state: $state"
+#     if [[ $state == "UPDATE_COMPLETE" ]] || [[ $state == "CREATE_COMPLETE" ]]; then
+#       COMPLETE=true
+#     elif [[ $state == "CREATE_FAILED" ]] || [[ $state == "ROLLBACK_COMPLETE" ]]; then
+#       echo "Cloudformation $stack_name failed with: $state"
+#       exit 1
+#     else
+#       echo "Waiting for $stack_name completion..."
+#       sleep 10
+#     fi
+#   done
 }
 
 # Main
