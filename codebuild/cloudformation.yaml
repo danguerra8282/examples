@@ -1,0 +1,156 @@
+Description: Builds a CodeBuild project
+Parameters:
+  pProjectName:
+    Type: String
+
+Resources:
+  rIamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${pProjectName}-CodeBuild-IamRole"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "codebuild.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: !Sub "${pProjectName}-CodeBuild-IamRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - ecr:CreateRepository
+                  - ecr:DescribeImages
+                  - ecr:DescribeRegistry
+                  - ecr:DescribeRepositories
+                  - ecr:ListTagsForResource
+                  - ecr:PutImage
+                  - ecr:PutImageScanningConfiguration
+                  - ecr:PutImageTagMutability
+                  - ecr:StartImageScan
+                  - ecr:TagResource
+                  - ecr:UntagResource
+                  - ecs:CreateCluster
+                  - ecs:CreateService
+                  - ecs:DescribeClusters
+                  - ecs:DescribeContainerInstances
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                  - ecs:DescribeTasks
+                  - ecs:ListClusters
+                  - ecs:ListContainerInstances
+                  - ecs:ListServices
+                  - ecs:ListTagsForResource
+                  - ecs:ListTaskDefinitions
+                  - ecs:ListTasks
+                  - ecs:RunTask
+                  - ecs:StartTask
+                  - ecs:StopTast
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                  - ecs:UpdateService
+                Resource: "*"
+              - 
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                Resource: 
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+
+  rIamProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - 
+          Ref: "rIamRole"
+
+  rCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: !Ref pProjectName
+      ServiceRole: !Ref rIamRole
+      # Artifacts: !Ref pArtifacts
+      Artifacts:
+        Type: no_artifacts
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+        # Image: aws/codebuild/eb-python-3.7-amazonlinux-64
+        PrivilegedMode: True
+      Source:
+        Type: S3
+        Location: _bucket_name_/Source.zip
+      ###
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-1234
+        Subnets:
+          - subnet-1234
+          - subnet-2345
+        VpcId: vpc-7890
+      ###
+      TimeoutInMinutes: 60
+
+  rCloudWatchRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${pProjectName}-trigger-codebuild-job"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "events.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: !Sub "${pProjectName}-trigger-codebuild-job"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - codebuild:StartBuild
+                Resource: 
+                  - !GetAtt rCodeBuildProject.Arn
+
+  rCloudWatchRule:
+    DependsOn: rCloudWatchRole
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub "CloudWatch event rule to execute the ${pProjectName} Codebuild job"
+      RoleArn: !GetAtt rCloudWatchRole.Arn
+      ScheduleExpression: "cron(0 7 * * ? *)" # Every day; 1 hour after aws_metrics-rule
+      # ScheduleExpression: "cron(0 20 * * ? *)" # Every day; 1 hour after aws_metrics-rule
+      Name: !Sub "${pProjectName}_codebuild-rule"
+      State: "ENABLED"
+      Targets: 
+        - 
+          RoleArn: !GetAtt rCloudWatchRole.Arn
+          Arn: !GetAtt rCodeBuildProject.Arn
+          Id: !Ref rCodeBuildProject
