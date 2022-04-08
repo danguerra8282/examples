@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloudformation to create lambda in an account.
+
+Parameters:
+  pSecret:
+    Type: String
+    Description: The value to store in Secrets Manager
+    NoEcho: True
+
+Resources:
+  # Custom Resource to Get VPC Subnets
+  rCustomResource:
+    Type: Custom::GetVpcSubnets
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:lambda_CustomResource_Get_BU_VPC_Subnets"
+  
+  rSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from within internal network.
+      VpcId: !Sub "${rCustomResource.vpc_found}"
+      # Inbound definition
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 10.0.0.0/8
+        Description: HTTPS from a specific subnet
+      # Outbound definition
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 10.0.0.0/8
+        Description: HTTPS from a specific subnet
+
+  rIamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: _name_-iam_role
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/_name_Boundary"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "lambda.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: _name_-iam_policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - lambda:InvokeFunction
+                Resource: "*"
+              - 
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                Resource: 
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+              -
+                Effect: "Allow"
+                Action:
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: "*"
+               -
+                Effect: "Allow"
+                Action:
+                  - s3:PutObject
+                Resource: "*"
+
+  rIamProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - 
+          Ref: "rIamRole"
+
+  rSecretManager:
+    Type: AWS::SecretsManager::Secret
+    Properties: 
+      Name: _name_-secret
+      SecretString: !Ref pSecret
+
+  rLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: _name_-lambda
+      Handler: "index.lambda_handler"
+      Timeout: 120
+      Role: !GetAtt rIamRole.Arn
+      VpcConfig:
+        SecurityGroupIds: 
+          - !Ref rSecurityGroup
+        SubnetIds: 
+          - Fn::Select:
+            - 0
+            - Fn::Split:
+              - '|'
+              - !Sub "${rCustomResource.subnets_found}"
+          - Fn::Select:
+            - 1
+            - Fn::Split:
+              - '|'
+              - !Sub "${rCustomResource.subnets_found}"
+          - Fn::Select:
+            - 2
+            - Fn::Split:
+              - '|'
+              - !Sub "${rCustomResource.subnets_found}"
+      Code: 
+        # S3Bucket: 
+        #   Ref: pS3BucketName
+        # S3Key: !Sub "lambda_${pLambdaName}.zip"
+        # --------------------------------------
+        ZipFile: |
+          import boto3
+          import datetime
+          import http.client
+          import json
+          def download_url(hostname: str, path: str) -> str:
+              conn = http.client.HTTPSConnection(hostname)
+              conn.request('GET', path)
+              resp = conn.getresponse().read()
+              conn.close()
+              return resp.decode('utf-8')
+          def lambda_handler(event, context):
+              #Create Client Connections
+              session = boto3.Session()
+              secretsmanager_client = session.client('secretsmanager')
+              #Get Secret
+              try:
+                secret_value = secretsmanager_client.get_secret_value(
+                    SecretId='_name_-secret'
+                )
+                value = secret_value['SecretString']
+              except Exception as e:
+                  logger.error(f'Failed to get secret')
+                  logger.error(f'e: {e}')
+                  raise e
+              #subscription_key = %_will_be_turned_into_a_function_that_pulls_from_secrets_manager_%
+              subscription_key = value
+              
+              calltype = '_name_'
+              path = f'/api/v1/{calltype}?rowCount=10000&startRow=1&Subscription-key={subscription_key}'
+              hostname = 'api._name_.com'
+              api_resp = download_url(hostname, path)
+              
+              api_json = json.loads(api_resp)
+              s3_bucket_name = '_name_'
+              file_name = 'json/' + str(datetime.datetime.today()) + '.json'
+              s3 = boto3.resource('s3')
+              s3.Bucket(s3_bucket_name).put_object(Key=file_name, Body='\n'.join([json.dumps(x) for x in api_json['items']]))
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('upload complete')}
+      Runtime: python3.7
+
+  rLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !GetAtt rLambda.Arn
+      SourceArn: !GetAtt rCloudWatchRule.Arn
+      Principal: "events.amazonaws.com"
+
+  rCloudWatchRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub "CloudWatch event rule to execute _name_-lambda"
+      ScheduleExpression: "cron(0 10,13,16,19 * * ? *)"
+      Name: !Sub "_name_-rule"
+      # State: "ENABLED"
+      State: "DISABLED"
+      Targets: 
+        - 
+          Arn: !GetAtt rLambda.Arn
+          Id: !Ref rLambda
+
+Outputs:
+  oIamRoleName:
+    Value: !Ref rIamRole
+
+  oIamRoleArn:
+    Value: !GetAtt rIamRole.Arn
+  
+  oIamProfileName:
+    Value: !Ref rIamProfile
+  
+  oIamProfileArn:
+    Value: !GetAtt rIamProfile.Arn
