@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloudformation to create Glue %_name_%.
+
+Resources:
+  # Glue Database
+  rGlueDatabase:
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput: 
+        Name: %_name_%
+
+  # Glue Table
+  rGlueTable:
+    Type: AWS::Glue::Table
+    Properties: 
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref rGlueDatabase
+      TableInput: 
+        Name: json_data_pull
+        Parameters: {
+          "sizeKey": "1628427",
+          "objectCount": "1",
+          "UPDATED_BY_CRAWLER": "_name_crawler_data_pull",
+          "CrawlerSchemaSerializerVersion": "1.0",
+          "recordCount": "1553",
+          "averageRecordSize": "1048",
+          "CrawlerSchemaDeserializerVersion": "1.0",
+          "compressionType": "none",
+          "classification": "json",
+          "typeOfData": "file"
+        }
+        StorageDescriptor:
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: s3://_name_-dev/json/
+          SerdeInfo:
+            Parameters:
+              paths: "evaluated_at_datetime_ept,evaluated_at_datetime_utc,forecast_area,forecast_datetime_beginning_ept,forecast_datetime_beginning_utc,forecast_datetime_ending_ept,forecast_datetime_ending_utc,forecast_load_mw"
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          Columns:
+            -
+              Name: evaluated_at_datetime_ept
+              Type: String
+            -
+              Name: evaluated_at_datetime_utc
+              Type: String
+            -
+              Name: forecast_area
+              Type: String
+            -
+              Name: forecast_datetime_beginning_ept
+              Type: String
+            -
+              Name: forecast_datetime_beginning_utc
+              Type: String
+            -
+              Name: forecast_datetime_ending_ept
+              Type: String
+            -
+              Name: forecast_datetime_ending_utc
+              Type: String
+            -
+              Name: forecast_load_mw
+              Type: Int
+
+  # Glue Crawler IAM Role
+  rGlueCrawlerIamRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: AWSGlueServiceRole-_name_data_pull
+      AssumeRolePolicyDocument: {
+          "Version": "2012-10-17",
+          "Statement": [
+              {
+                  "Effect": "Allow",
+                  "Principal": {
+                      "Service": "glue.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+              }
+          ]
+      }
+      Description: IAM Role for Glue Crawler "_name_crawler_data_pull"
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/_name_Boundary"
+      Policies: 
+        - 
+          PolicyName: AWSGlueServiceRole-_name_
+          PolicyDocument: 
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "s3:GetObject",
+                            "s3:PutObject"
+                        ],
+                        "Resource": "arn:aws:s3:::_name_*"
+                    }
+                ]
+            }
+
+  # # Glue Classifiers
+  # rTestClassifier:
+  #   Type: AWS::Glue::Classifier
+  #   Properties: 
+  #     CsvClassifier: 
+  #       ContainsHeader: UNKNOWN # UNKNOWN, ABSENT, PRESENT
+  #       Delimiter: ","
+  #       Name: test_classifier
+  #       QuoteSymbol: '"'
+  
+  # rXmlArgusClassifier:
+  #   Type: AWS::Glue::Classifier
+  #   Properties: 
+  #     XMLClassifier: 
+  #       Classification: xml
+  #       Name: xml-argus-classifier
+  #       RowTag: FCRecord
+
+  # Glue Crawler
+  rGlueCrawler:
+    DependsOn: rGlueCrawlerIamRole
+    Type: AWS::Glue::Crawler
+    Properties:
+      # Classifiers: 
+      #   - !Ref rTestClassifier
+      #   - !Ref rXmlArgusClassifier
+      DatabaseName: !Ref rGlueDatabase
+      Name: _name_crawler_data_pull
+      Role: !Ref rGlueCrawlerIamRole
+      Targets: 
+        S3Targets:
+          -
+            Path: s3://_name_-dev/json
+
+Outputs:
+  oGlueDatabaseName:
+    Value: !Ref rGlueDatabase
+    Export:
+      Name: oGlueDatabaseName
+  
+  oGlueTableName:
+    Value: !Ref rGlueTable
+    Export:
+      Name: oGlueTableName
+  
+  oGlueCrawlerIamRole:
+    Value: !Ref rGlueCrawlerIamRole
+    Export:
+      Name: oGlueCrawlerIamRoleName
+  
+  oGlueCrawlerName:
+    Value: !Ref rGlueCrawler
+    Export:
+      Name: oGlueCrawlerName
