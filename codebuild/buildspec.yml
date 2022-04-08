@@ -1,4 +1,4 @@
-Description: CodeBuild to build Cloud Transformation Team Website
+Description: CodeBuild to build Cloud Website
 version: 0.2
 
 environment_variables:
@@ -8,10 +8,11 @@ environment_variables:
 phases:
   pre_build:
     commands:
-      - echo "Cloning _name_Repo"
+      - echo "Cloning _repo_name_ repo"
       - script_directory=$(pwd)
       - echo $script_directory
-      - python PythonFiles/clone_git_repo.py
+      # - python "folder/file.py" "Secrets_Manager_Id_Containing_Developer_Token" "Github_Repo_Name"
+      - python PythonFiles/clone_git_repo.py cloud_website_developer_token _repo_name_
       
   build:
     commands:
@@ -20,12 +21,12 @@ phases:
       - cd ..
       - cd ..
       - cd /tmp
-      - cd _name_Repo/
+      - cd _repo_name_/
       - timestamp=$(date "+%d%m%Y%H%M%S")
       - echo $timestamp
-      - docker build -t _name_website:$timestamp .
-      - docker tag _name_website:$timestamp 123412341234.dkr.ecr.us-east-1.amazonaws.com/_name_website:$timestamp
-      - docker push 12341231234.dkr.ecr.us-east-1.amazonaws.com/_name_website:$timestamp
+      - docker build -t cloud_website:$timestamp .
+      - docker tag cloud_website:$timestamp 123412341234.dkr.ecr.us-east-1.amazonaws.com/cloud_website:$timestamp
+      - docker push 123412341234.dkr.ecr.us-east-1.amazonaws.com/cloud_website:$timestamp
 
   post_build:
     commands:
