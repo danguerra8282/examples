@@ -1,0 +1,51 @@
+Description: CodeBuild example source
+version: 0.2
+
+environment_variables:
+  plaintext:
+    "ENCRYPTED_AMI_NAME": "name_encrypted_ami"
+    "BUSINESS_UNIT": "bu_name"
+    "KMS_KEY": "arn:aws:kms:us-east-1:123412341234:key/asdf-1234-qwer"
+    "SHARE_TO_ACCOUNTS": "1234,2345,3456"
+
+phases:
+  install:
+    commands:
+      - pip install boto3
+      - pip install botocore
+
+  pre_build:
+    commands:
+      - echo "Starting pre_build phase"
+      - aws s3 cp s3://bucket-packer-v2/packer_1.4.4_linux_amd64.zip packer.zip && unzip packer.zip
+      - aws s3 cp s3://bucket-packer-v2/jq jq && chmod +x ./jq
+      - echo "1.0.0" > /tmp/build_version.txt
+  build:
+    commands:
+      - echo "Starting build phase"
+      - echo "Building HashiCorp Packer template, packerfile.json"
+      - |-
+        ./packer build -var "aws_source_ami=ami-12341234" \
+        -var "build_version=$(cat /tmp/build_version.txt)" PackerFiles/packerfile.json
+
+  post_build:
+    commands:
+      - echo "Starting post_build phase"
+      - echo "Encrypting AMI"
+      - cat manifest.json
+      - artifact_id=$(grep artifact_id manifest.json | cut -d":" -f3)
+      - echo $artifact_id
+      - ami_id=$(echo $artifact_id | cut -d ':' -f2)
+      - ami_id=$(echo $ami_id |cut -d\" -f1)
+      - echo $ami_id
+      - region=$(grep artifact_id manifest.json | cut -d":" -f2)
+      - region=$(echo $region |cut -d\" -f2)
+      - echo $region
+      
+      ## - encrypted_ami=$(aws ec2 copy-image --source-image-id $ami_id --source-region $region --region $region --encrypted --kms-key-id arn:aws:kms:us-east-1:123412341234:key/asdf-1234-qwer --name $ENCRYPTED_AMI_NAME)
+      ## - echo $encrypted_ami
+      ## - encrypted_ami=$(echo $encrypted_ami |cut -d\" -f4)
+      ## - echo $encrypted_ami
+
+      - python PythonFiles/encrypt_and_share_ami.py $ami_id $SHARE_TO_ACCOUNTS $ENCRYPTED_AMI_NAME $KMS_KEY $region
+      # - python PythonFiles/encrypt_and_share_ami.py ami-1234asdf $SHARE_TO_ACCOUNTS $ENCRYPTED_AMI_NAME $KMS_KEY us-east-1
