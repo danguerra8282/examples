@@ -1,0 +1,36 @@
+Description: CodeBuild to build Cloud Transformation Team Website
+version: 0.2
+
+environment_variables:
+  plaintext:
+    "Building Cloud Website": ""
+
+phases:
+  pre_build:
+    commands:
+      - echo "Cloning _name_Repo"
+      - script_directory=$(pwd)
+      - echo $script_directory
+      - python PythonFiles/clone_git_repo.py
+      
+  build:
+    commands:
+      - echo "Creating Cloud Website Container Image"
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 123412341234.dkr.ecr.us-east-1.amazonaws.com
+      - cd ..
+      - cd ..
+      - cd /tmp
+      - cd _name_Repo/
+      - timestamp=$(date "+%d%m%Y%H%M%S")
+      - echo $timestamp
+      - docker build -t _name_website:$timestamp .
+      - docker tag _name_website:$timestamp 123412341234.dkr.ecr.us-east-1.amazonaws.com/_name_website:$timestamp
+      - docker push 12341231234.dkr.ecr.us-east-1.amazonaws.com/_name_website:$timestamp
+
+  post_build:
+    commands:
+      - echo "Update ECS Service to Consume New Image"
+      - cd ..
+      - cd ..
+      - cd $script_directory
+      - python PythonFiles/update_ecs.py
