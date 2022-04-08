@@ -1,0 +1,75 @@
+{
+    "variables": {
+      "build_version": "1.0.0",
+      "aws_instance_type": "t2.xlarge",
+      "aws_region": "us-east-1",
+      "aws_source_ami": "ami-1234",
+      "aws_security_group_id": "sg-1234",
+      "aws_subnet_id": "subnet-1234",
+      "aws_vpc_id": "vpc-1234",
+      "iam_instance_profile": "asdfasdfasdf",
+      "pipeline_exec_id": "1234",
+      "pipeline_name": "GoldenAmiPipeline"
+    },
+  
+    "builders": [
+      {
+        "type": "amazon-ebs",
+        "region": "{{user `aws_region`}}",
+        "source_ami": "{{user `aws_source_ami`}}",
+        "instance_type": "{{user `aws_instance_type`}}",
+        "temporary_key_pair_name": "Server-temp-00",
+        "communicator": "winrm",
+        "winrm_username": "Administrator",
+        "user_data_file": "./PackerFiles/packer_userdata.ps1",
+        "winrm_use_ssl": true,
+        "winrm_insecure": true,
+        "winrm_port": 5986,
+        "windows_password_timeout": "300m",
+        "iam_instance_profile": "{{user `iam_instance_profile`}}",
+        "security_group_id": "{{user `aws_security_group_id`}}",
+        "subnet_id": "{{user `aws_subnet_id`}}",
+        "vpc_id": "{{user `aws_vpc_id`}}",
+        "ami_name": "GoldenAmi_v{{ user `build_version`}}-{{timestamp}}",
+        "ami_description": "GoldenAmi, built at {{timestamp}} from AMI: {{ user `aws_source_ami`}}",
+        "tags": {
+          "Version": "{{ user `build_version`}}",
+          "PipelineInfo": "{{user `pipeline_name`}}:{{user `pipeline_exec_id`}}",
+          "Name": "WindowsServer2016_v{{ user `build_version`}}",
+          "pf:Foundational_AMI": "{{user `aws_source_ami`}}",
+          "BusinessUnit": "asdf",
+          "Team": "asdf",
+          "Owner": "asdf",
+          "ProductName": "GoldenAmi"
+        },
+        "run_tags": {
+          "PipelineInfo": "{{user `pipeline_name`}}:{{user `pipeline_exec_id`}}",
+          "Name": "AMI-Bake-Packer-GoldenAmi",
+          "Foundational_AMI": "{{user `aws_source_ami`}}",
+          "BusinessUnit": "asdf",
+          "Team": "asdf",
+          "Owner": "asdf",
+          "ProductName": "GoldenAmi"
+        }
+      }
+    ],
+  
+    "provisioners": [
+      {
+        "type": "powershell",
+        "script": "./PackerFiles/install_software.ps1"
+      },
+      {
+        "type": "powershell",
+        "script": "./PackerFiles/install_aws_services.ps1"
+      }
+    ],
+  
+    "post-processors": [
+      {
+        "type": "manifest",
+        "output": "manifest.json",
+        "strip_path": true
+      }
+    ]
+  }
