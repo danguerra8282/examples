@@ -47,7 +47,7 @@ Parameters:
     Type: String
     AllowedPattern: ^[0-9]*$
   pResourceOwner:
-    Description: A nwie ID for who should be listed as the owner of the instance
+    Description: An ID for who should be listed as the owner of the instance
     Type: String
     AllowedPattern: .*\S.*
   pAPRMID:
@@ -89,7 +89,7 @@ Parameters:
   # Windows Parameters
   pAppAdmins:
     Type: String
-    Description: Optional.  Comma separated list of users or AD groups that will be granted Power User/Administrator access to the instance using the AdminMe website (adminme.nwie.net).
+    Description: Optional.  Comma separated list of users or AD groups that will be granted Power User/Administrator access to the instance using the AdminMe website.
   pIIS:
     Type: String
     AllowedValues:
@@ -101,7 +101,7 @@ Parameters:
 Resources:
   WindowsServer:
     Type: AWS::EC2::Instance
-    Metadata:                 ######## Please do not remove lines 99-127 as this section makes this a Nationwide compliant server.  Feel free to add to this section. ########
+    Metadata:                 ######## Please do not remove lines 99-127 as this section makes this a compliant server.  Feel free to add to this section. ########
       AWS::CloudFormation::Init:
         configSets:
           config:
@@ -130,7 +130,7 @@ Resources:
                 Fn::Sub:
                   powershell.exe -command c:\nwtools\build\InstanceBuilder\Windows-Configure-NewServer_2_0_0.ps1;
                   #powershell.exe -command c:\nwtools\build\InstanceBuilder\Windows-Configure-NewServer.ps1
-              waitAfterCompletion: '120' ######## Please do not remove lines 99-127 as this section makes this a Nationwide compliant server.  Feel free to add to this section. ########
+              waitAfterCompletion: '120' ######## Please do not remove lines 99-127 as this section makes this a compliant server.  Feel free to add to this section. ########
     Properties:
       Tags:
       -
