@@ -168,7 +168,7 @@ def lambda_handler(event, context):
         logger.info(f"Setting SMB guest password for storage gateway to standard...")
         _ = sg_client.set_smb_guest_password(
             GatewayARN=gateway_arn,
-            Password='NationwideGuestSMB!'
+            Password='domainGuestSMB!'
         )
 
         # Join storage gateway to the domain
@@ -221,7 +221,7 @@ def create_storage_gateway_instance(
     :param stack_name: Name of the CFN stack to use
     :param sg_name: Name of the storage gateway
     :param disbursement_code: Disbursement code the instance should be billed to
-    :param resource_owner: NWIE ID of the owner of the resource
+    :param resource_owner: ID of the owner of the resource
     :return: Private IP address of the EC2 instance
     """
     logger.info(f"Launching CloudFormation stack {stack_name} to create instance, role, and security group...")
@@ -315,13 +315,13 @@ def get_activation_id(gateway_ip: str) -> str:
 
 def create_cname(sg_name: str, gateway_ip: str) -> None:
     """
-    Creates a Cname for the storage gateway appliance of storagegateway-SGNAME.aws.e1.nwie.net
+    Creates a Cname for the storage gateway appliance of storagegateway-SGNAME.aws.e1.domain.net
 
     :param sg_name: Name of the storage gateway appliance
     :param gateway_ip: IP address of the storage gateway instance
     :return: None
     """
-    logger.info(f"Creating CNAME for gateway of storagegateway-{sg_name.lower()}.aws.e1.nwie.net. -> {gateway_ip}...")
+    logger.info(f"Creating CNAME for gateway of storagegateway-{sg_name.lower()}.aws.e1.domain.net. -> {gateway_ip}...")
 
     client = aws_credential_helper.boto3_client('route53')
 
@@ -335,7 +335,7 @@ def create_cname(sg_name: str, gateway_ip: str) -> None:
                         {
                             'Action': "UPSERT",
                             'ResourceRecordSet': {
-                                'Name': f'storagegateway-{sg_name.lower()}.aws.e1.nwie.net.',
+                                'Name': f'storagegateway-{sg_name.lower()}.aws.e1.domain.net.',
                                 'Type': 'A',
                                 'TTL': 300,
                                 'ResourceRecords': [
@@ -365,7 +365,7 @@ def create_cname(sg_name: str, gateway_ip: str) -> None:
 
 def join_to_domain(gateway_arn: str, sg_client: object) -> None:
     """
-    Joins the storage gateway instance to the domain to allow for nwie auth on SMB file shares
+    Joins the storage gateway instance to the domain to allow for domain auth on SMB file shares
 
     :param gateway_arn: ARN of the storage gateway instance
     :param sg_client: Boto3 storagegateway client to use for SG modification
@@ -374,12 +374,12 @@ def join_to_domain(gateway_arn: str, sg_client: object) -> None:
     client = aws_credential_helper.boto3_client('ssm')
 
     response = client.get_parameters(
-        Names=['nwie_srvinstl_password'],
+        Names=['domain_srvinstl_password'],
         WithDecryption=True
     )
     bind_password = response['Parameters'][0]['Value']
 
-    logger.info("Joining storage gateway to nwie.net domain...")
+    logger.info("Joining storage gateway to domain.net domain...")
 
     sg_client.join_domain(
         GatewayARN=gateway_arn,
