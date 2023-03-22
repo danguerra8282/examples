@@ -130,9 +130,9 @@ def lambda_handler(event, context):
             logger.debug(f'Committing files to git repo...')
             commit_env = os.environ
             commit_env['GIT_AUTHOR_NAME'] = 'Cloud_Transformation'
-            commit_env['GIT_AUTHOR_EMAIL'] = 'cloud-transformation@aep.com'
+            commit_env['GIT_AUTHOR_EMAIL'] = 'company@place.com'
             commit_env['GIT_COMMITTER_NAME'] = 'Cloud_Transformation_AWS_Lambda'
-            commit_env['GIT_COMMITTER_EMAIL'] = 'cloud-transformation@aep.com'
+            commit_env['GIT_COMMITTER_EMAIL'] = 'company@place.com'
             response = git.exec_command(
                 'commit', '-am "CodePipeline Initial Commit"', cwd='/tmp/' + repo_name, env=commit_env
             )
