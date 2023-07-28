@@ -81,12 +81,13 @@ resource "aws_iam_policy" "codebuild_policy" {
       {
         Action = [
             "ec2:CreateNetworkInterface",
+            "ec2:CreateNetworkInterfacePermission",
             "ec2:DescribeDhcpOptions",
             "ec2:DescribeNetworkInterfaces",
             "ec2:DeleteNetworkInterface",
             "ec2:DescribeSubnets",
             "ec2:DescribeSecurityGroups",
-            "ec2:DescribeVpcs"
+            "ec2:DescribeVpcs"            
         ]
         Effect   = "Allow"
         Resource = "*"
