@@ -58,8 +58,8 @@ logger.info("Function container starting up...")
 # Accounts we do not want to share
 CURRENT_ACCOUNT = os.environ['CurrentAccount']
 ACCOUNTS_TO_SKIP = [
-                    "937891257447",  # MASTER ACCOUNT
-                    "245564243137",  # SEC TOOLS ACCOUNT
+                    "123456789011",  # MASTER ACCOUNT
+                    "123456789011",  # SEC TOOLS ACCOUNT
                     CURRENT_ACCOUNT  # InfraSvcsProd
                     ]
 # TEMPORARY ACCOUNTS TO SKIP, accounts in the middle of being set up,
