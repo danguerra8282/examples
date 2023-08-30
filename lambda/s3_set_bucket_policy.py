@@ -17,6 +17,10 @@ def lambda_handler(event, context):
     bucket_modified = event['detail']['requestParameters']['bucketName']
     logger.info(f"S3 Bucket modification detected: {bucket_modified}")
 
+    # Exit Successful Immediately if the event occurred on the access logging bucket
+    if bucket_modified == os.environ['access_logging_bucket_name']:
+        exit(0)
+
     # Setup Connection
     try:
         session = boto3.Session()
@@ -39,9 +43,10 @@ def lambda_handler(event, context):
         raise e
 
     # Get Bucket Policy
-    add_policy_ssl = True
-    add_policy_org_only = True
     current_policy = False
+    reevaluate_ssl = False
+    reevaluate_org_only = False
+
     if bucket_exists:
         # Evaluate for SSL
         try:
@@ -57,13 +62,15 @@ def lambda_handler(event, context):
             logger.info(f'successful_evaluation for SSL: {successful_evaluation}')
             if successful_evaluation:
                 add_policy_ssl = False
+            else:
+                add_policy_ssl = True
 
         except (Exception,):
             logger.warning(f'bucket_modified does not have required policies attached')
+            add_policy_ssl = True
 
         # Evaluate for Org Only Access
         try:
-            time.sleep(1)
             policy = s3_client.get_bucket_policy(
                 Bucket=bucket_modified
             )
@@ -76,12 +83,27 @@ def lambda_handler(event, context):
             logger.info(f'successful_evaluation for Org Only: {successful_evaluation}')
             if successful_evaluation:
                 add_policy_org_only = False
+            else:
+                add_policy_org_only = True
 
         except (Exception,):
             logger.warning(f'bucket_modified does not have required policies attached')
+            add_policy_org_only = True
+
+        # Evaluate for Bucket Server Access Logging
+        logger.info(f'Evaluating for Bucket Server Access Logging')
+        access_logging_response = enforce_access_logging(
+            s3_client,
+            bucket_modified,
+            os.environ['access_logging_bucket_name']
+        )
+        logger.info(f'access_logging_response: {access_logging_response}')
+
+    else:
+        add_policy_ssl = False
+        add_policy_org_only = False
 
     # Add SSL Bucket Policy
-    reevaluate_ssl = False
     if add_policy_ssl:
         try:
             logger.info(f'Adding SSL Policy to {bucket_modified}...')
@@ -97,7 +119,6 @@ def lambda_handler(event, context):
             raise e
 
     # Add Org Only Bucket Policy
-    reevaluate_org_only = False
     if add_policy_org_only:
         try:
             logger.info(f'Adding Org Only Policy to {bucket_modified}...')
@@ -115,6 +136,7 @@ def lambda_handler(event, context):
     # Reevaluate for ssl
     if reevaluate_ssl:
         try:
+            time.sleep(1)
             logger.info(f'Reevaluating for SSL...')
             policy = s3_client.get_bucket_policy(
                 Bucket=bucket_modified
@@ -132,6 +154,7 @@ def lambda_handler(event, context):
     # Reevaluate for org only
     if reevaluate_org_only:
         try:
+            time.sleep(1)
             logger.info(f'Reevaluating for Org Only...')
             policy = s3_client.get_bucket_policy(
                 Bucket=bucket_modified
@@ -225,6 +248,38 @@ def compare_policy_org_only(
             successful_evaluation = True
 
     return successful_evaluation
+
+
+def enforce_access_logging(
+        s3_client,
+        bucket_name,
+        logging_bucket
+):
+    """
+    Checks if bucket logging is configured and set it to the default access logging bucket if not
+    Default Logging Bucket = %account_id%-access-logging
+    :param s3_client: boto3.client
+    :param bucket_name: (string) the current bucket
+    :param logging_bucket: (string) the account's default logging bucket
+    :return: (Bool) if enforcement was successful
+    """
+    try:
+        response = s3_client.get_bucket_logging(
+            Bucket=bucket_name
+        )
+        return response['LoggingEnabled']
+    except(Exception,):
+        print()
+        response = s3_client.put_bucket_logging(
+            Bucket=bucket_name,
+            BucketLoggingStatus={
+                'LoggingEnabled': {
+                    'TargetBucket': logging_bucket,
+                    'TargetPrefix': f'{bucket_name}/'
+                }
+            }
+        )
+        return response
 
 
 def add_ssl_policy(
