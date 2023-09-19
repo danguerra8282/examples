@@ -1,0 +1,83 @@
+https://docs.docker.com/engine/install/ubuntu/
+https://learn.microsoft.com/en-us/windows/wsl/install
+https://adamtheautomator.com/docker-rancher/
+
+
+Requirements:
+1. Windows Subsystem Linux (wsl) v2
+	- https://learn.microsoft.com/en-us/windows/wsl/install
+	dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+	
+2. Enable VirtualMachinePlatform
+	dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+	
+3. wsl.exe --update
+
+4. 
+
+- In Powershell; run:
+	wsl --set-default Ubuntu (sets the default version to Ubuntu)
+
+	wsl
+	(/mnt/c is the root directory containing Windows stuff)
+	
+
+- Ensure Docker is installed
+Add Dependencies:
+
+sudo apt-get update; \
+sudo apt-get install \
+ apt-transport-https \
+ ca-certificates \
+ curl \
+ gnupg-agent \
+ software-properties-common
+ 
+Add docker gpg key:
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+
+Setup Repository:
+sudo add-apt-repository \
+   "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+   $(lsb_release -cs) \
+   stable"
+   
+Install Docker:
+sudo apt-get update; \
+sudo apt-get install docker-ce docker-ce-cli containerd.io
+
+Verify Installation:
+sudo docker run hello-world
+
+#############################################################################
+
+DOCKER COMMANDS -
+
+To Run Example_App:
+	sudo docker run -d -p 5000:5000 example_app
+	browse to: http://localhost:5000/
+
+List Containers:
+	sudo docker ps -a
+	
+Remove Container:
+	sudo docker rm "container_id"
+
+List Images:
+	sudo docker image ls
+
+Build Image:
+	sudo docker build -t example .
+
+Run Image:
+	sudo docker run example
+	
+#############################################################################
+
+Flask Cheat Sheet:
+	https://blog.appseed.us/flask-cheat-sheet-and-free-templates-63zo/
+
+#############################################################################
+
+sudo apt install npm
+
