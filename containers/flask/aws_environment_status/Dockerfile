@@ -4,7 +4,7 @@
 FROM python:3.8-slim-buster
 
 # Defines the working directory inside the container
-WORKDIR /rgbarry_aws_environment_status
+WORKDIR /_aws_environment_status
 
 # Copy the contents of the requirements.txt to the container
 COPY requirements.txt requirements.txt
