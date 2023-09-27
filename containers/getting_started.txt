@@ -74,10 +74,31 @@ Run Image:
 	
 #############################################################################
 
+Run Flask App Locally:
+	flask --app app --debug run
+
 Flask Cheat Sheet:
 	https://blog.appseed.us/flask-cheat-sheet-and-free-templates-63zo/
+
+Flask Tutorial:
+	https://pythonhow.com/python-tutorial/flask/Adding-CSS-styling-to-your-website/
 
 #############################################################################
 
 sudo apt install npm
 
+#############################################################################
+
+Ubuntu 22.04.2 LTS docker.io installation:
+
+	sudo add-apt-repository \
+		"deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+		bionic \
+		stable"
+
+	sudo apt install docker.io
+	
+	
+	
+	# Start/Restart Firewall Service?
+	sudo service ufw start
