@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+{% block content %}
+<head>
+    <title>EC2 Non-Prod - Detailed</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+
+<div class="ec2_non_prod">
+    <h1 style="color: black">*This is not a live page.  Refresh to capture the most recent information.</h1>
+</div>
+
+<div>
+    <!-- Table Style -->
+    <style type="text/css">
+        th:tr{
+            color: blue;
+      
+        }
+        table.center {
+            margin-left:auto; 
+            margin-right:auto;
+        }
+        tr:nth-of-type(2n){
+            border: 1px solid black;
+            background-color: rgba(150, 150, 150, 0.5);
+      
+        }
+        td{
+            padding: 8px 8px;
+            border: 1px solid black;
+            text-align: center;
+        }
+    </style>
+
+    <!-- Table Content -->
+    <table class="center">
+        <th>
+            <tr style="color: black; "> 
+                <td>Number</td>
+                <td>Instance Name</td>
+                <td>Instance Id</td>
+                <td>Instance Private IP</td>
+                <td>Instance vCPU</td>
+                <td>Instance Memory</td>
+                <td>Disk Capacity</td>
+                <td>Disk Usage</td>
+                <td>Instance State</td>
+            </tr>
+        </th>
+        {%for i in range(0, length)%}
+            <tr>
+                <td>{{i}}</td>
+                <td>{{ec2_instance_names[i]}}</td>
+                <td>{{ec2_instance_ids[i]}}</td>
+                <td>{{ec2_instance_private_ips[i]}}</td>
+                <td>{{ec2_instance_vcpu[i]}}</td>
+                <td>{{ec2_instance_memory[i]}}</td>
+                <td>{{ec2_instance_disk_capacity[i]}}</td>
+                <!-- {% for x in range(0, ec2_instance_disk_capacity[i]|length) %}
+                    <td>{{ec2_instance_disk_capacity[i]}}
+                    <td>{{ec2_instance_disk_capacity[x]}}</td>
+                {%endfor%}    -->
+                <td>{{ec2_instance_disk_usage[i]}}</td>
+                
+                {% if ec2_instance_state[i] == 'running' %}
+                    <td style="color: Green; ">{{ec2_instance_state[i]}}</td>
+                {% else %}
+                    <td style="color: Red; ">{{ec2_instance_state[i]}}</td>
+                {% endif %}
+        {%endfor%}
+            </tr>
+    </table>
+  
+   </div>
+{% endblock %}
