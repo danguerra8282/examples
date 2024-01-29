@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.footer {
+   position: fixed;
+   left: 0;
+   bottom: 0;
+   width: 100%;
+   background-color: #333;
+   color: white;
+   text-align: center;
+   opacity: 100%;
+}
+
+.navbar {
+  overflow: hidden;
+  background-color: #333;
+}
+
+.navbar a {
+  float: left;
+  font-size: 16px;
+  color: white;
+  text-align: center;
+  padding: 14px 16px;
+  text-decoration: none;
+}
+
+.dropdown {
+  float: left;
+  overflow: hidden;
+}
+
+.dropdown .dropbtn {
+  font-size: 16px;  
+  border: none;
+  outline: none;
+  color: white;
+  padding: 14px 16px;
+  background-color: inherit;
+  font-family: inherit;
+  margin: 0;
+}
+
+.navbar a:hover, .dropdown:hover .dropbtn {
+  background-color: red;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #f9f9f9;
+  min-width: 160px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index: 1;
+}
+
+.dropdown-content a {
+  float: none;
+  color: black;
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+  text-align: left;
+}
+
+.dropdown-content a:hover {
+  background-color: #ddd;
+}
+
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+</style>
+</head>
+
+<body style="background-color:white;">
+
+<div class="navbar">
+  <a href="{{ url_for('home') }}">Home</a>
+  <a href="{{ url_for('costs') }}">Costs</a>
+  
+  <div class="dropdown">
+    <button class="dropbtn">Security Status
+      <i class="fa fa-caret-down"></i>
+    </button>
+    <div class="dropdown-content">
+      <a href="{{ url_for('security_events') }}">Security Events</a>
+      <a href="{{ url_for('externally_exposed_ips') }}">Externally Exposed IPs</a>
+      <!-- <a href="#">Link 3</a> -->
+    </div>
+  </div>
+  <div class="dropdown">
+    <button class="dropbtn">Non-Prod 
+      <i class="fa fa-caret-down"></i>
+    </button>
+    <div class="dropdown-content">
+      <a href="{{ url_for('ec2_non_prod') }}">EC2 - Simple</a>
+      <a href="{{ url_for('ec2_non_prod_detailed') }}">EC2 - Detailed</a>
+      <!-- <a href="#">Link 3</a> -->
+    </div>
+  </div>
+  <div class="dropdown">
+    <button class="dropbtn">Prod 
+      <i class="fa fa-caret-down"></i>
+    </button>
+    <div class="dropdown-content">
+      <a href="{{ url_for('ec2_prod_detailed') }}">EC2 - Detailed</a>
+    </div>
+  </div>
+  <div class="dropdown">
+    <button class="dropbtn">Network
+      <i class="fa fa-caret-down"></i>
+    </button>
+    <div class="dropdown-content">
+      <a href="{{ url_for('ec2_network_detailed') }}">EC2 - Detailed</a>
+    </div>
+  </div>
+  <div class="dropdown">
+    <button class="dropbtn">Documentation
+      <i class="fa fa-caret-down"></i>
+    </button>
+    <div class="dropdown-content">
+      <a href="{{ url_for('network_architecture_us_east_1') }}">Architecture - Network (us-east-1)</a>
+      <a href="{{ url_for('network_architecture_us_west_2') }}">Architecture - Network (us-west-2)</a>
+      <a href="{{ url_for('vendor_portal_alb_architecture') }}">Architecture - Vendor Portal ALB</a>
+      <a href="{{ url_for('get_crowdstrike_token') }}">Get Crowdstrike Token</a>
+    </div>
+  </div>
+</div>
+
+<!-- <h3>Dropdown Menu inside a Navigation Bar</h3>
+<p>Hover over the "Dropdown" link to see the dropdown menu.</p> -->
+
+</body>
+
+<div class="footer">
+  <p>update_me</p>
+</div>
+</html>
+
+
+<!DOCTYPE html>
+<html>
+  <body>
+    <div class="container">
+        {% block content %}
+        {% endblock %}
+    </div>
+  </body>
+</html> 

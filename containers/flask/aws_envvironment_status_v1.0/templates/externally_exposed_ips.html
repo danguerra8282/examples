@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{% block content %}
+   <head>
+        <title>Externally Exposed IPs</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+   </head>
+   <div class="externally_exposed_ips">
+     <h1 style="color: black">*This is not a live page.  Refresh to capture the most recent information.</h1>
+     <h1 style="color: red">**Findings in Red shouldn't exist and need to be investigated.  Public facing resources should only exist in the Network account.</h1>
+     <h1 style="color: black"></h1>
+   </div>
+
+   <div>
+    <!-- Table Style -->
+    <style type="text/css">
+        table.center {
+            margin-left:auto; 
+            margin-right:auto;
+        }
+        tr:nth-of-type(2n){
+            border: 1px solid black;
+            background-color: rgba(150, 150, 150, 0.5);
+        }
+        td{
+            padding: 8px 8px;
+            border: 1px solid black;
+            text-align: center;
+        }
+    </style>
+
+    <!-- Table Content -->
+    <table class="center">
+        <th>
+            <tr style="color: black; "> 
+                <td>Number</td>
+                <td>Account</td>
+                <td>Region</td>
+                <td>Public IP Address</td>
+                <td>Interface Type</td>
+                <td>Resource Attachment / Description</td>
+            </tr>
+        </th>
+        {%for i in range(0, length)%}
+            <tr>
+                <td>{{i}}</td>
+                {% if account_names[i] != 'Network' %}
+                    <td style="color: Red; ">{{account_names[i]}}</td>
+                    <td style="color: Red; ">{{regions[i]}}</td>
+                    <td style="color: Red; ">{{public_ips[i]}}</td>
+                    <td style="color: Red; ">{{interface_types[i]}}</td>
+                    <td style="color: Red; ">{{resource_attachements[i]}}</td>
+                {% else %}
+                    <td>{{account_names[i]}}</td>
+                    <td>{{regions[i]}}</td>
+                    <td>{{public_ips[i]}}</td>
+                    <td>{{interface_types[i]}}</td>
+                    <td>{{resource_attachements[i]}}</td>
+                {% endif %}
+
+        {%endfor%}
+            </tr>
+    </table>
+
+{% endblock %}

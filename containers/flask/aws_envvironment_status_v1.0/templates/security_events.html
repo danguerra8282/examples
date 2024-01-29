@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+{% block content %}
+   <head>
+        <title>Security Events</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+   </head>
+   <div class="security_events">
+     <h1 style="color: black">*This is not a live page.  Refresh to capture the most recent information.</h1>
+     <h1 style="color: black">**All Logs listed will expire 2 weeks after generation.</h1>
+     <h1 style="color: black"></h1>
+   </div>
+
+   <div>
+    <!-- Table Style -->
+    <style type="text/css">
+        table.center {
+            margin-left:auto; 
+            margin-right:auto;
+        }
+        tr:nth-of-type(2n){
+            border: 1px solid black;
+            background-color: rgba(150, 150, 150, 0.5);
+        }
+        td{
+            padding: 8px 8px;
+            border: 1px solid black;
+            text-align: center;
+        }
+        
+        /* .headerSortDown:after,
+        .headerSortUp:after {
+            content: ' ';
+            position: relative;
+            left: 2px;
+            border: 8px solid transparent;
+        }
+
+        .headerSortDown:after {
+            top: 10px;
+            border-top-color: silver;
+        }
+
+        .headerSortUp:after {
+            bottom: 15px;
+            border-bottom-color: silver;
+        }
+
+        .headerSortDown,
+        .headerSortUp {
+            padding-right: 10px;
+        } */
+    </style>
+
+    <!-- Table Content -->
+    <table class="center">
+        <th>
+            <tr style="color: black; "> 
+                <td>Number</td>
+                <td>Date/Time Occurrence</td>
+                <td>Account ID</td>
+                <td>CloudTrail Event ID</td>
+                <td>Security Alert</td>
+            </tr>
+        </th>
+        {%for i in range(0, length)%}
+            <tr>
+                <td>{{i}}</td>
+                <td>{{date_times[i]}}</td>
+                <td>{{account_ids[i]}}</td>
+                <td>{{cloudtrail_event_ids[i]}}</td>
+                <td>{{security_alerts[i]}}</td>
+        {%endfor%}
+            </tr>
+    </table>
+  
+   </div>
+{% endblock %}

@@ -1,0 +1,115 @@
+<!-- DO NOT REMOVE THE COMMENTED OUT CONTENT.  IT WILL BREAK THE PAGES AND IT DON"T KNOW WHY... -->
+<!-- TO FIX, UNCOMMENT AND RECOMMENT OUT WHAT IS IN % block content % -->
+
+{% extends "layout.html" %}
+{% block content %}
+<head>
+  <title>Costs</title>
+  <div class="cost">
+    <h1 style="color: black"></h1>
+  </div>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.5.0/Chart.min.js"></script>
+  <h1>Last 30 Days Cost</h1>
+  <canvas id="DailyCost" width="1200" height="500"></canvas>
+  <h1>Last 12 Months Cost</h1>
+  <canvas id="MonthlyCost" width="1200" height="500"></canvas>
+</head>
+
+<body>
+  <div style="height: 100px; width: 100px;">
+      <canvas id="DailyCost"></canvas>
+  </div>
+  <div style="height: 100px; width: 100px;">
+    <canvas id="MonthlyCost"></canvas>
+</div>
+
+  <script>
+      // Global parameters:
+      // do not resize the chart canvas when its container does (keep at 1200x500px)
+      Chart.defaults.global.responsive = false;
+      
+      //Define Daily Chart
+      const labels_daily = {{ labels_daily | tojson }};
+
+      const data_daily = {
+          labels: labels_daily,
+          datasets: [
+            {
+              fill: false,
+              label: 'Costs - Production',
+              backgroundColor: 'rgb(0, 145, 26)',
+              borderColor: 'rgb(0, 145, 26)',
+              data: {{ data_prod_daily | tojson }},
+            },
+            {
+                fill: false,
+                label: 'Costs - Non_Prod',
+                backgroundColor: 'rgb(23, 3, 252)',
+                borderColor: 'rgb(23, 3, 252)',
+                data: {{ data_non_prod_daily | tojson }},
+            },
+            {
+              fill: false,
+              label: 'Costs - Network',
+              backgroundColor: 'rgb(191, 2, 2)',
+              borderColor: 'rgb(191, 2, 2)',
+              data: {{ data_network_daily | tojson }},
+            }]
+      };
+
+      const config_daily = {
+          type: 'line',
+          data: data_daily,
+          options: { maintainAspectRatio: false }
+      };
+
+      const DailyCost = new Chart(
+          document.getElementById('DailyCost'),
+          config_daily
+      );
+
+      // Define Monthly Chart
+      const labels_monthly = {{ labels_monthly | tojson }};
+
+      const data_monthly = {
+          labels: labels_monthly,
+          datasets: [
+            {
+              fill: false,
+              label: 'Costs - Production',
+              backgroundColor: 'rgb(0, 145, 26)',
+              borderColor: 'rgb(0, 145, 26)',
+              data: {{ data_prod_monthly | tojson }},
+            },
+            {
+                fill: false,
+                label: 'Costs - Non_Prod',
+                backgroundColor: 'rgb(23, 3, 252)',
+                borderColor: 'rgb(23, 3, 252)',
+                data: {{ data_non_prod_monthly | tojson }},
+            },
+            {
+              fill: false,
+              label: 'Costs - Network',
+              backgroundColor: 'rgb(191, 2, 2)',
+              borderColor: 'rgb(191, 2, 2)',
+              data: {{ data_network_monthly | tojson }},
+            }]
+      };
+
+      const config_monthly = {
+          type: 'bar',
+          data: data_monthly,
+          options: { maintainAspectRatio: false }
+      };
+
+      const MonthlyCost = new Chart(
+          document.getElementById('MonthlyCost'),
+          config_monthly
+      );
+
+  </script>
+</body>
+   
+ {% endblock %}
