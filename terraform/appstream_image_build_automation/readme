@@ -1,2 +1,3 @@
-This is based off https://aws.amazon.com/blogs/desktop-and-application-streaming/automatically-create-customized-appstream-2-0-windows-images/ but has been converted 
-for Terraform.  I also updated the lambdas for pep8 standards.  Some other modifications have been performed.
+This is based off https://aws.amazon.com/blogs/desktop-and-application-streaming/automatically-create-customized-appstream-2-0-windows-images/ and 
+https://github.com/aws-samples/appstream-serverless-image-creation-automation/ but has been converted for Terraform.  I also updated the lambdas for pep8 standards.  
+Some other modifications have been performed.
